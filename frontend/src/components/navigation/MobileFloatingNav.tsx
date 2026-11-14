@@ -27,16 +27,6 @@ export const MobileFloatingNav: React.FC = () => {
   const navigate = useNavigate();
   const { session, isDoctor, isReceptionist, isSuperAdmin, isHospitalAdmin } = useAuth();
 
-  // Hide on landing page, display signage, and admin consoles (admin handles its own floating section dock)
-  if (
-    location.pathname === '/' ||
-    location.pathname.startsWith('/display') ||
-    location.pathname.startsWith('/admin') ||
-    location.pathname.startsWith('/hospital-admin')
-  ) {
-    return null;
-  }
-
   // Determine active item from current route
   const currentPath = location.pathname;
 
@@ -85,6 +75,16 @@ export const MobileFloatingNav: React.FC = () => {
       { id: 'account', label: session ? 'Account' : 'Sign in', path: '/staff-login', icon: User },
     ];
   }, [session, isDoctor, isReceptionist, isSuperAdmin, isHospitalAdmin]);
+
+  // Hide on landing page, display signage, and admin consoles (admin handles its own floating section dock)
+  if (
+    location.pathname === '/' ||
+    location.pathname.startsWith('/display') ||
+    location.pathname.startsWith('/admin') ||
+    location.pathname.startsWith('/hospital-admin')
+  ) {
+    return null;
+  }
 
   // Find currently active item
   const activeItem =

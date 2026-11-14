@@ -28,6 +28,7 @@
 | MVP-03 | Connect Admin Center to new provisioning endpoints | M1 | High | Backlog | MVP-01 | M1 can provision hospital admins and staff via UI |
 | MVP-04 | Connect Admin Center stats to new stat endpoints | M1 | Medium | Backlog | MVP-01 | Stats dashboards show live data |
 | MVP-05 | Frontend implements incident reporting on error boundaries | M1 | Medium | Backlog | MVP-01 | Error boundaries POST to /incidents |
+| BUG-01 | Fix patient sign-in blank page caused by MobileFloatingNav hook order | M1 | High | Done | - | Navigation from landing to patient sign-in and back renders without hook errors; verified repeated browser navigation with no console warnings/errors and successful frontend build |
 | EXT-01 | Build selected P1 enhancements | M3 | Agreed | Backlog | P-03, relevant contracts | Enhancement criteria and tests pass |
 | INT-01 | Integrate and verify end-to-end demo | All | High | Backlog | MVP-01, MVP-02, EXT-01 as applicable | MVP works; selected enhancements integrate without breaking it |
 
