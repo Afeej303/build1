@@ -12,7 +12,6 @@ import { PublicWaitingBoard } from './features/display/PublicWaitingBoard';
 import { AdminDashboard } from './features/admin/AdminDashboard';
 import { SuperAdminDashboard } from './features/super-admin/SuperAdminDashboard';
 import { HospitalAdminDashboard } from './features/hospital-admin/HospitalAdminDashboard';
-import { MobileFloatingNav } from './components/navigation/MobileFloatingNav';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -112,7 +111,6 @@ export const App: React.FC = () => {
             {/* Catch-all redirect to landing page */}
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
-          <MobileFloatingNav />
         </BrowserRouter>
       </AuthProvider>
     </QueryClientProvider>

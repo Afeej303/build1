@@ -19,6 +19,8 @@ import {
   Activity,
   MoreHorizontal,
   X,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { ease } from '../hq/ui';
@@ -66,23 +68,53 @@ export function AdminLayout({
   incidentCount,
   className,
 }: AdminLayoutProps) {
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        return localStorage.getItem('hqms_admin_sidebar_collapsed') === 'true';
+      } catch {
+        return false;
+      }
+    }
+    return false;
+  });
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
 
-  // Close menus on Escape key
+  // Sync collapsed state to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem('hqms_admin_sidebar_collapsed', String(collapsed));
+    } catch {
+      // Ignore storage errors in restricted contexts
+    }
+  }, [collapsed]);
+
+  // Keyboard shortcut Ctrl+B / Cmd+B to toggle sidebar on desktop, and Escape to close popovers
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setUserMenuOpen(false);
         setMoreMenuOpen(false);
       }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
+        e.preventDefault();
+        setCollapsed((prev) => !prev);
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Configure mobile navigation items based on role
+  // Helper to check if a navigation item is active, reconciling role synonyms
+  const isNavActive = (itemId: string) => {
+    if (activeNavId === itemId) return true;
+    if ((activeNavId === 'schedules' || activeNavId === 'doctors') && (itemId === 'schedules' || itemId === 'doctors')) return true;
+    if ((activeNavId === 'counters' || activeNavId === 'staff') && (itemId === 'counters' || itemId === 'staff')) return true;
+    return false;
+  };
+
+  // Configure mobile navigation items based on role (complete sidebar functions)
   const mobileNavConfig = React.useMemo(() => {
     if (role === 'super_admin') {
       const primary = [
@@ -103,10 +135,10 @@ export function AdminLayout({
       { id: 'overview', label: 'Overview', icon: LayoutDashboard },
       { id: 'departments', label: 'Depts', icon: Network },
       { id: 'queues', label: 'Queues', icon: ListOrdered },
-      { id: 'doctors', label: 'Doctors', icon: CalendarClock },
+      { id: 'schedules', label: 'Doctors', icon: CalendarClock },
     ];
     const secondary = [
-      { id: 'staff', label: 'Staff & Counters', icon: UserCheck },
+      { id: 'counters', label: 'Staff & Counters', icon: UserCheck },
       { id: 'activity', label: 'Activity Log', icon: Activity },
       { id: 'incidents', label: 'Incidents', icon: AlertTriangle, badge: incidentCount },
       { id: 'settings', label: 'Settings', icon: Settings },
@@ -114,12 +146,12 @@ export function AdminLayout({
     return { primary, secondary };
   }, [role, incidentCount]);
 
-  const isSecondaryActive = mobileNavConfig.secondary.some((s) => s.id === activeNavId);
-  const activeSecondaryItem = mobileNavConfig.secondary.find((s) => s.id === activeNavId);
+  const isSecondaryActive = mobileNavConfig.secondary.some((s) => isNavActive(s.id));
+  const activeSecondaryItem = mobileNavConfig.secondary.find((s) => isNavActive(s.id));
 
   return (
     <div className={cn('min-h-screen bg-background text-foreground flex', className)}>
-      {/* Desktop Sidebar (Only on large screens) */}
+      {/* Desktop Sidebar (Only on large screens, collapsible to compact rail) */}
       <div className="hidden lg:block shrink-0">
         <div className="sticky top-0 h-screen">
           <AdminSidebar
@@ -135,10 +167,21 @@ export function AdminLayout({
       </div>
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 transition-all duration-300">
         {/* Frosted Glass Top Navigation Bar */}
         <header className="glass sticky top-0 z-30 flex h-16 items-center justify-between border-b border-border/70 px-4 sm:px-6">
           <div className="flex items-center gap-3">
+            {/* Desktop Sidebar Toggle Button */}
+            <button
+              type="button"
+              onClick={() => setCollapsed(!collapsed)}
+              className="hidden lg:flex items-center justify-center size-9 rounded-xl border border-border/80 bg-card/80 hover:bg-muted text-muted-foreground hover:text-foreground transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              title={collapsed ? "Open sidebar (Ctrl+B)" : "Close sidebar (Ctrl+B)"}
+              aria-label={collapsed ? "Open sidebar" : "Close sidebar"}
+            >
+              {collapsed ? <PanelLeftOpen className="size-4.5" /> : <PanelLeftClose className="size-4.5" />}
+            </button>
+
             {/* Hospital / Tenant Badge */}
             {role === 'hospital_admin' ? (
               <div className="inline-flex items-center gap-2 rounded-full border border-border/80 bg-card/70 px-3 py-1 text-xs font-medium text-foreground shadow-xs">
@@ -232,21 +275,22 @@ export function AdminLayout({
         <main className="flex-1 min-w-0 pb-28 lg:pb-8">{children}</main>
       </div>
 
-      {/* Mobile Floating Navigation Bar (lg:hidden) - Completely replaces mobile drawer */}
+      {/* Mobile Floating Navigation Bar (lg:hidden) - Complete substitute of sidebar on mobile */}
       <nav
         aria-label="Admin Navigation"
         className="lg:hidden fixed bottom-5 left-1/2 -translate-x-1/2 z-50 pointer-events-auto select-none"
         style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
       >
-        <div className="relative flex items-center gap-1.5 p-1.5 rounded-full bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border border-slate-200/90 dark:border-slate-800/90 shadow-[0_12px_36px_-6px_rgba(0,0,0,0.18),0_4px_16px_rgba(0,0,0,0.08)]">
+        <div className="relative flex items-center gap-1.5 p-1.5 rounded-full bg-card/95 dark:bg-slate-900/95 backdrop-blur-2xl border border-border/80 dark:border-slate-800/80 shadow-[0_12px_36px_-6px_rgba(0,0,0,0.18),0_4px_16px_rgba(0,0,0,0.08)]">
           {/* Primary Tabs */}
           {mobileNavConfig.primary.map((item) => {
-            const isActive = activeNavId === item.id;
+            const isActive = isNavActive(item.id);
             const Icon = item.icon;
 
             return (
               <button
                 key={item.id}
+                type="button"
                 onClick={() => {
                   setMoreMenuOpen(false);
                   onNavigate?.(item.id);
@@ -254,26 +298,29 @@ export function AdminLayout({
                 className="relative flex items-center justify-center rounded-full transition-colors cursor-pointer focus:outline-none"
                 style={{ minHeight: '44px' }}
                 aria-current={isActive ? 'page' : undefined}
+                aria-label={item.label}
               >
                 {isActive && (
                   <motion.div
                     layoutId="admin-mobile-nav-active-pill"
-                    className="absolute inset-0 rounded-full bg-primary/15 dark:bg-primary/25 border border-primary/20 dark:border-primary/30"
+                    className="absolute inset-0 rounded-full bg-primary/15 dark:bg-primary/25 border border-primary/25 dark:border-primary/35 shadow-xs"
                     transition={{ type: 'spring', stiffness: 450, damping: 35 }}
                   />
                 )}
 
                 <div
-                  className={`relative z-10 flex items-center gap-1.5 px-3 py-2 transition-colors ${
+                  className={cn(
+                    'relative z-10 flex items-center gap-1.5 transition-colors',
                     isActive
-                      ? 'text-primary dark:text-primary font-semibold'
-                      : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 px-2.5'
-                  }`}
+                      ? 'text-primary font-semibold px-3.5 py-2'
+                      : 'text-muted-foreground hover:text-foreground px-2.5 py-2'
+                  )}
                 >
                   <Icon
-                    className={`size-[18px] transition-transform ${
-                      isActive ? 'scale-105 stroke-[2.4]' : 'stroke-[1.8]'
-                    }`}
+                    className={cn(
+                      'size-[18px] transition-transform duration-200',
+                      isActive ? 'scale-105 stroke-[2.4]' : 'stroke-[1.9]'
+                    )}
                   />
                   <AnimatePresence initial={false}>
                     {isActive && (
@@ -296,6 +343,7 @@ export function AdminLayout({
           {/* 'More' Button (Opens remaining sections in a sleek floating menu) */}
           <div className="relative">
             <button
+              type="button"
               onClick={() => setMoreMenuOpen(!moreMenuOpen)}
               className="relative flex items-center justify-center rounded-full transition-colors cursor-pointer focus:outline-none"
               style={{ minHeight: '44px' }}
@@ -304,23 +352,30 @@ export function AdminLayout({
               {isSecondaryActive && (
                 <motion.div
                   layoutId="admin-mobile-nav-active-pill"
-                  className="absolute inset-0 rounded-full bg-primary/15 dark:bg-primary/25 border border-primary/20 dark:border-primary/30"
+                  className="absolute inset-0 rounded-full bg-primary/15 dark:bg-primary/25 border border-primary/25 dark:border-primary/35 shadow-xs"
                   transition={{ type: 'spring', stiffness: 450, damping: 35 }}
                 />
               )}
 
               <div
-                className={`relative z-10 flex items-center gap-1.5 px-3 py-2 transition-colors ${
+                className={cn(
+                  'relative z-10 flex items-center gap-1.5 transition-colors',
                   isSecondaryActive
-                    ? 'text-primary dark:text-primary font-semibold'
-                    : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 px-2.5'
-                }`}
+                    ? 'text-primary font-semibold px-3.5 py-2'
+                    : 'text-muted-foreground hover:text-foreground px-2.5 py-2'
+                )}
               >
-                <MoreHorizontal
-                  className={`size-[18px] transition-transform ${
-                    isSecondaryActive ? 'scale-105 stroke-[2.4]' : 'stroke-[1.8]'
-                  }`}
-                />
+                <div className="relative">
+                  <MoreHorizontal
+                    className={cn(
+                      'size-[18px] transition-transform duration-200',
+                      isSecondaryActive ? 'scale-105 stroke-[2.4]' : 'stroke-[1.9]'
+                    )}
+                  />
+                  {!isSecondaryActive && incidentCount !== undefined && incidentCount > 0 && (
+                    <span className="absolute -top-1 -right-1 size-2 rounded-full bg-destructive animate-pulse" />
+                  )}
+                </div>
                 <AnimatePresence initial={false}>
                   {isSecondaryActive && (
                     <motion.span
@@ -350,11 +405,12 @@ export function AdminLayout({
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: 10, scale: 0.95 }}
                     transition={{ duration: 0.18, ease }}
-                    className="absolute bottom-full right-0 mb-3 w-56 rounded-2xl border border-border/90 bg-card/98 p-2 shadow-2xl backdrop-blur-xl z-50 space-y-1"
+                    className="absolute bottom-full right-0 mb-3 w-60 rounded-2xl border border-border/90 bg-card/98 p-2 shadow-2xl backdrop-blur-xl z-50 space-y-1"
                   >
                     <div className="px-3 py-1.5 border-b border-border/60 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center justify-between">
                       <span>Additional Sections</span>
                       <button
+                        type="button"
                         onClick={() => setMoreMenuOpen(false)}
                         className="rounded-full p-0.5 text-muted-foreground hover:text-foreground"
                       >
@@ -364,15 +420,16 @@ export function AdminLayout({
 
                     {mobileNavConfig.secondary.map((sec) => {
                       const SecIcon = sec.icon;
-                      const isSecActive = activeNavId === sec.id;
+                      const isSecActive = isNavActive(sec.id);
                       return (
                         <button
                           key={sec.id}
+                          type="button"
                           onClick={() => {
                             setMoreMenuOpen(false);
                             onNavigate?.(sec.id);
                           }}
-                          className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-medium transition-colors ${
+                          className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-medium transition-colors cursor-pointer ${
                             isSecActive
                               ? 'bg-primary/10 text-primary font-semibold'
                               : 'text-foreground hover:bg-muted/60'
@@ -398,7 +455,7 @@ export function AdminLayout({
                           setMoreMenuOpen(false);
                           onLogout?.();
                         }}
-                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-destructive hover:bg-destructive/10 transition-colors"
+                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-destructive hover:bg-destructive/10 transition-colors cursor-pointer"
                       >
                         <LogOut className="size-4 shrink-0" />
                         <span>Sign Out</span>

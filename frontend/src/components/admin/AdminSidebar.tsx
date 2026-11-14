@@ -16,6 +16,8 @@ import {
   ChevronRight,
   ShieldCheck,
   Building,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { ease, Logo } from '../hq/ui';
@@ -103,40 +105,55 @@ export function AdminSidebar({
       )}
     >
       {/* Brand & Role Header */}
-      <div className="flex h-16 items-center justify-between border-b border-border/70 px-4">
+      <div className="flex h-16 items-center justify-between border-b border-border/70 px-3.5">
         {!collapsed ? (
-          <div className="flex items-center gap-2.5 overflow-hidden">
-            <Logo className="text-sm shrink-0" />
-            <div className="flex flex-col truncate">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground truncate">
-                {role === 'super_admin' ? 'Super Admin' : 'Hospital Admin'}
-              </span>
-              {hospitalName && role === 'hospital_admin' && (
-                <span className="text-xs font-medium text-foreground truncate">
-                  {hospitalName}
+          <>
+            <div className="flex items-center gap-2.5 overflow-hidden">
+              <Logo className="text-sm shrink-0" />
+              <div className="flex flex-col truncate">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground truncate">
+                  {role === 'super_admin' ? 'Super Admin' : 'Hospital Admin'}
                 </span>
-              )}
+                {hospitalName && role === 'hospital_admin' && (
+                  <span className="text-xs font-medium text-foreground truncate">
+                    {hospitalName}
+                  </span>
+                )}
+              </div>
             </div>
-          </div>
-        ) : (
-          <div className="mx-auto">
-            <span className="grid size-8 place-items-center rounded-lg bg-ink text-ink-foreground">
-              <svg viewBox="0 0 16 16" className="size-4" fill="currentColor">
-                <path d="M6.5 2h3v4.5H14v3H9.5V14h-3V9.5H2v-3h4.5z" />
-              </svg>
-            </span>
-          </div>
-        )}
 
-        {onToggleCollapse && !collapsed && (
-          <button
-            type="button"
-            onClick={onToggleCollapse}
-            className="press rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            aria-label="Collapse sidebar"
-          >
-            <ChevronLeft className="size-4" />
-          </button>
+            {onToggleCollapse && (
+              <button
+                type="button"
+                onClick={onToggleCollapse}
+                className="press rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-pointer"
+                title="Collapse sidebar (Ctrl+B)"
+                aria-label="Collapse sidebar"
+              >
+                <PanelLeftClose className="size-4" />
+              </button>
+            )}
+          </>
+        ) : (
+          <div className="w-full flex items-center justify-center">
+            {onToggleCollapse ? (
+              <button
+                type="button"
+                onClick={onToggleCollapse}
+                className="press flex items-center justify-center size-9 rounded-xl text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
+                title="Expand sidebar (Ctrl+B)"
+                aria-label="Expand sidebar"
+              >
+                <PanelLeftOpen className="size-4.5" />
+              </button>
+            ) : (
+              <span className="grid size-8 place-items-center rounded-lg bg-ink text-ink-foreground">
+                <svg viewBox="0 0 16 16" className="size-4" fill="currentColor">
+                  <path d="M6.5 2h3v4.5H14v3H9.5V14h-3V9.5H2v-3h4.5z" />
+                </svg>
+              </span>
+            )}
+          </div>
         )}
       </div>
 
@@ -196,32 +213,46 @@ export function AdminSidebar({
         })}
       </nav>
 
-      {/* Footer / Toggle for Collapsed View */}
-      <div className="border-t border-border/70 p-3">
-        {onToggleCollapse && collapsed && (
-          <button
-            type="button"
-            onClick={onToggleCollapse}
-            className="press flex w-full items-center justify-center rounded-xl p-2 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            aria-label="Expand sidebar"
-          >
-            <ChevronRight className="size-4" />
-          </button>
-        )}
-
-        {!collapsed && (
-          <div className="flex items-center gap-2.5 rounded-xl bg-muted/40 p-2.5 border border-border/50 text-[11px] text-muted-foreground">
-            {role === 'super_admin' ? (
-              <ShieldCheck className="size-4 text-primary shrink-0" />
-            ) : (
-              <Building className="size-4 text-primary shrink-0" />
-            )}
-            <div className="flex flex-col truncate">
-              <span className="font-semibold text-foreground truncate">
-                {role === 'super_admin' ? 'Multi-Tenant Root' : 'Tenant Admin'}
-              </span>
-              <span className="truncate text-[10px]">HQMS v1.0 Admin Console</span>
+      {/* Footer / Toggle */}
+      <div className="border-t border-border/70 p-2.5">
+        {collapsed ? (
+          onToggleCollapse && (
+            <button
+              type="button"
+              onClick={onToggleCollapse}
+              className="press flex w-full items-center justify-center rounded-xl p-2 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-pointer"
+              title="Expand sidebar (Ctrl+B)"
+              aria-label="Expand sidebar"
+            >
+              <ChevronRight className="size-4" />
+            </button>
+          )
+        ) : (
+          <div className="flex items-center justify-between gap-2 rounded-xl bg-muted/40 p-2 border border-border/50 text-[11px] text-muted-foreground">
+            <div className="flex items-center gap-2 truncate">
+              {role === 'super_admin' ? (
+                <ShieldCheck className="size-4 text-primary shrink-0" />
+              ) : (
+                <Building className="size-4 text-primary shrink-0" />
+              )}
+              <div className="flex flex-col truncate">
+                <span className="font-semibold text-foreground truncate">
+                  {role === 'super_admin' ? 'Multi-Tenant Root' : 'Tenant Admin'}
+                </span>
+                <span className="truncate text-[10px]">HQMS v1.0 Admin Console</span>
+              </div>
             </div>
+            {onToggleCollapse && (
+              <button
+                type="button"
+                onClick={onToggleCollapse}
+                className="press rounded-lg p-1 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none cursor-pointer"
+                title="Collapse sidebar (Ctrl+B)"
+                aria-label="Collapse sidebar"
+              >
+                <ChevronLeft className="size-3.5" />
+              </button>
+            )}
           </div>
         )}
       </div>
