@@ -193,3 +193,15 @@ The response uses the existing error envelope. Proposed codes are `SLOT_UNAVAILA
 
 - `POST /queues/{queueId}/appointment-slots` accepts `{ startsAt, endsAt }` as ISO timestamps with explicit offsets. The assigned doctor receives `201` with the slot shape. Overlapping slots across their queues return `409 APPOINTMENT_SLOT_OVERLAP`.
 - `POST /appointments/{appointmentId}/check-in` accepts no body. Assigned receptionists receive `200` with the core queue token shape. A booked appointment can be checked in on its calendar day in Asia/Kolkata. Repeat requests return the same token. A separate active token in the same queue returns `409 DUPLICATE_WALK_IN`.
+
+### Patient discovery and registration
+
+All three routes require a Supabase bearer token.
+
+| Interface | Response |
+|---|---|
+| `GET /appointment-queues` | `{ items }` of queues with active assigned doctors. Each item includes `id`, `name`, `roomLabel`, `hospital: { id, name }`, `departmentName`, and `doctorName`. |
+| `GET /users/me/patients` | `{ items }` of patient records linked to the signed-in account. Each item includes `id`, `hospitalId`, `patientNumber`, and `displayName`. |
+| `POST /patients/self` | `201` with the patient record. Send `{ hospitalId, displayName }`. The server generates the UHID on first registration and returns the existing record on repeat. |
+
+Select a queue, register at its hospital if needed, then load available slots using that queue ID. Self-registration returns `404 HOSPITAL_NOT_FOUND` for an unknown hospital or `409 PATIENT_NOT_AVAILABLE` when existing linked records require reception to resolve the match.

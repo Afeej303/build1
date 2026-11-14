@@ -12,7 +12,13 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { IsISO8601, IsOptional, IsUUID } from 'class-validator';
+import {
+  IsISO8601,
+  IsOptional,
+  IsUUID,
+  IsString,
+  MaxLength,
+} from 'class-validator';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
 import { Prisma } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -35,6 +41,16 @@ class Booking {
 }
 
 import { tokenView } from './hospital.controller.js';
+import { randomUUID } from 'node:crypto';
+
+class RegisterPatient {
+  @IsUUID()
+  hospitalId!: string;
+
+  @IsString()
+  @MaxLength(120)
+  displayName!: string;
+}
 
 class PublishSlot {
   @IsISO8601({ strict: true })
@@ -104,6 +120,107 @@ const slotUnavailable = () =>
 @Controller()
 export class AppointmentsController {
   constructor(private readonly db: PrismaService) {}
+
+  @Get('appointment-queues')
+  async discover() {
+    const queues = await this.db.hospitalQueue.findMany({
+      where: { doctor: { is: { status: 'ACTIVE' } } },
+      select: {
+        id: true,
+        name: true,
+        roomLabel: true,
+        doctor: { select: { name: true } },
+        department: {
+          select: {
+            name: true,
+            hospital: { select: { id: true, name: true } },
+          },
+        },
+      },
+      orderBy: [{ name: 'asc' }, { id: 'asc' }],
+    });
+    return {
+      items: queues.map(({ department, doctor, ...queue }) => ({
+        ...queue,
+        hospital: department.hospital,
+        departmentName: department.name,
+        doctorName: doctor?.name ?? null,
+      })),
+    };
+  }
+
+  @Get('users/me/patients')
+  async patientProfiles(@CurrentUser('id') userId: string) {
+    const items = await this.db.patient.findMany({
+      where: { userId },
+      select: {
+        id: true,
+        hospitalId: true,
+        patientNumber: true,
+        displayName: true,
+      },
+      orderBy: { id: 'asc' },
+    });
+    return { items };
+  }
+
+  @Post('patients/self')
+  async registerPatient(
+    @CurrentUser('id') userId: string,
+    @Body() body: RegisterPatient,
+  ) {
+    const displayName = body.displayName.trim();
+    if (!displayName) {
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'Display name is required',
+      });
+    }
+    return this.db.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "users" WHERE id = ${userId}::uuid FOR UPDATE`;
+      if (
+        !(await tx.hospital.findUnique({
+          where: { id: body.hospitalId },
+          select: { id: true },
+        }))
+      ) {
+        throw new NotFoundException({
+          code: 'HOSPITAL_NOT_FOUND',
+          message: 'Hospital not found',
+        });
+      }
+      const where = { userId, hospitalId: body.hospitalId };
+      const select = {
+        id: true,
+        hospitalId: true,
+        patientNumber: true,
+        displayName: true,
+      } as const;
+      const existing = await tx.patient.findMany({
+        where,
+        select,
+        take: 2,
+        orderBy: { id: 'asc' },
+      });
+      if (existing.length > 1) {
+        throw new ConflictException({
+          code: 'PATIENT_NOT_AVAILABLE',
+          message: 'Reception must resolve the matching patient records',
+        });
+      }
+      return (
+        existing[0] ??
+        tx.patient.create({
+          data: {
+            ...where,
+            displayName,
+            patientNumber: 'UHID-' + randomUUID(),
+          },
+          select,
+        })
+      );
+    });
+  }
 
   @Post('queues/:queueId/appointment-slots')
   async publish(
