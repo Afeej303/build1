@@ -31,13 +31,10 @@ Documentation draft only. The build1 backend exposes no endpoints yet.
 
 Confirm the fields and errors needed by the receptionist, doctor, patient, and waiting-room screens. Flag whether the first demo needs a registration screen or can use seeded patients. Agree with M2 on staff scope discovery and queue refresh before wiring frontend mocks to the contract.
 
-## Follow-up after M1 review
+## Final frontend acceptance review
 
-The [contract revision](../API-CONTRACT.md#revision-for-m1-review) proposes all requested discovery and read interfaces, token slip fields, public QR behavior, errors, and polling defaults. Please compare the acceptance checks with your frontend criteria. Confirm exact patient-number lookup, doctor patient display fields, staff scoping, and the public frontend route before we freeze mocks.
+M1 confirmed exact UHID plus patient name for reception. The doctor dashboard now specifies queue, department and room context, active patient identification, call time, priority and ordered waiting tokens. No patient notes are part of the payload.
 
+The QR opens `/display/board/:publicQueueId`. Signed-in patient tracking uses `/display/track/:tokenId`. The polling defaults are 5 seconds for staff and public views and 10 seconds for patients, with refresh after mutations, on focus and on reconnect.
 
-## Updated after M1's screen requirements
-
-The proposed `GET /users/me` now includes multiple staff assignments. Queue lookup provides availability and room details. Patient lookup uses exact UHID. The doctor dashboard restores waiting order, priority labels and the call timestamp, and provides minimum identification for the assigned doctor's active patient. The patient tracker includes department, doctor, room and last update. The print flow uses `issuedAt` and `slip.publicQueueId`. Public QR opens the anonymized queue board.
-
-Review whether UHID and name are enough for receptionist confirmation, whether active patient fields fit the doctor screen, and what frontend route should open from QR. Polling starts at a proposed 5 seconds for staff/public and 10 seconds for patients, with refresh after changes, focus and reconnect. Confirm the draft against M1 acceptance criteria before freezing mocks.
+The contract maps all eight frontend-requested error codes to HTTP statuses. M1 should check the revised shapes and codes against their acceptance criteria before live integration. Backend implementation and verification are pending.

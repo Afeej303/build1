@@ -1,13 +1,13 @@
 # API and Interface Contract
 
-**Status:** Proposed for M1/M2 review under P-04. No build1 endpoints are implemented yet. This draft covers the first walk-in journey within the [hospital MVP](mvp.md).
+**Status:** Updated after M1 feedback for final acceptance review under P-04. No build1 endpoints are implemented yet. This draft covers the first walk-in journey within the [hospital MVP](mvp.md).
 
 ## Conventions
 
 - JSON over HTTP. Deployment URL and API prefix are TBD.
 - Protected requests send `Authorization: Bearer <Supabase access token>`. The NestJS starter verifies identity and resolves app roles and permissions from the database.
 - Public signup can establish patient access. Staff access requires an authorized assignment. Hospital and department boundaries and doctor queue assignments are enforced by the server.
-- Proposed error body includes `statusCode`, `message`, and an optional machine-readable `code`. Use 400 for malformed input, 401 for missing or invalid authentication, 403 for forbidden actions, 404 for unavailable resources, and 409 for conflicting queue transitions. Return structured errors without private patient details.
+- Error responses use `{ statusCode, code, message }`. The machine-readable `code` is required for the cases defined below. Use 400 for malformed input, 401 for missing or invalid authentication, 403 for forbidden actions, 404 for unavailable resources, and 409 for conflicting queue transitions. Return structured errors without private patient details.
 
 ## First integration slice
 
@@ -72,10 +72,10 @@ The public response includes an aggregate waiting count and the current display 
 
 | Question | Owner |
 |---|---|
-| Confirm staff assignment scopes and the frontend public QR route. | M1 + M2 |
+| Confirm staff assignment scope rules. | M1 + M2 |
 | Which patient lookup and registration screens are required for the first integration? | M1 + M2 |
 | How do priority, tie-breaking, duplicate check-in, and repeat transitions work? | M2 + team |
-| Confirm polling defaults and define how wait estimates are calculated. | M1 + M2 |
+| Define how wait estimates are calculated. | M1 + M2 |
 | Which enhancement interfaces need contracts in this slice? | M3 + M2 |
 | What triggers rescheduling and when is patient confirmation required? | M1 + M2 |
 
@@ -83,13 +83,13 @@ M1 and M2 agree on paths, fields, errors, and acceptance checks before implement
 
 ## Revision for M1 review
 
-The following proposals extend the first slice. IDs are opaque strings. All list endpoints return `{ "items": [...] }`. Empty collections return 200 with an empty array.
+The following proposals extend the first slice. IDs are opaque strings. All list endpoints return `{ "items": [...] }`. Empty collections return 200 with an empty array. Exact UHID lookup returns 404 when no accessible patient matches.
 
 | Interface | Access and response item |
 |---|---|
 | `GET /staff/queues?departmentId=...` | Signed-in staff. Return accessible queues with `id`, `name`, `department: { id, name }`, `doctor: { id, name }` or null, `roomLabel` or null, and `acceptingWalkIns` (boolean availability for walk-ins). Doctors see assigned queues. Receptionists see queues within their authorized scope. The department filter is optional. |
-| `GET /staff/patients/lookup?patientNumber=...` | Authorized receptionist. Exact UHID lookup using the `patientNumber` query parameter returns `items` containing at most one `{ id, patientNumber, displayName }` within staff scope. The returned `id` is the `patientId` for check-in. Confirm the match using UHID and name. Name and phone search remain TBD. |
-| `GET /queues/{queueId}/dashboard` | Assigned doctor or authorized receptionist. Return `{ activeToken, waitingTokens, updatedAt }`. `activeToken` is null when idle. Both views include core token fields and a staff-only `priority` label. Array order is the waiting order. Priority labels and ordering rules remain TBD. The active token includes `calledAt`. For the assigned doctor it also includes `patient: { id, patientNumber, displayName }`. The waiting list omits patient identification. |
+| `GET /staff/patients/lookup?patientNumber=...` | Authorized receptionist. Exact UHID lookup using the `patientNumber` query parameter returns `items` containing one `{ id, patientNumber, displayName }` within staff scope. The returned `id` is the `patientId` for check-in. Confirm the match using UHID and name. Exact UHID is the lookup method for this slice. No match returns 404 with `PATIENT_NOT_FOUND`. |
+| `GET /queues/{queueId}/dashboard` | Assigned doctor or authorized receptionist. Return `{ queueId, department: { id, name }, roomLabel, activeToken, waitingTokens, updatedAt }`. `activeToken` is null when idle. The room label is nullable. Both token views include core token fields and a staff-only `priority` label. Array order is the waiting order. Priority labels and ordering rules remain TBD. The active token includes `calledAt`. For the assigned doctor it also includes `patient: { id, patientNumber, displayName }`. The waiting list omits patient identification. |
 | `GET /users/me/queue-tokens?status=active` | Patient. Return only their `WAITING` and `CALLED` tokens using the API-005 shape, so the UI can restore tracking after refresh. |
 
 ### Token slip and QR
@@ -104,7 +104,7 @@ Extend API-002's success response with `slip`:
 }
 ```
 
-The authorized staff queue list also includes `publicQueueId` for generating waiting-room QR codes. The frontend builds its public page URL from that identifier and calls API-006. The frontend route is for M1 to confirm. The QR opens the aggregate display. A patient's personal position uses API-005 with authentication and ownership checks. Token slips can be rendered and printed from the frontend.
+The authorized staff queue list also includes `publicQueueId` for generating waiting-room QR codes. The frontend builds its public page URL from that identifier and calls API-006. The printed QR opens `/display/board/:publicQueueId`. The signed-in frontend route `/display/track/:tokenId` loads an individual token through API-005. The QR opens the aggregate display. A patient's personal position uses API-005 with authentication and ownership checks. Token slips can be rendered and printed from the frontend.
 
 ### Machine-readable errors
 
@@ -113,11 +113,15 @@ The authorized staff queue list also includes `publicQueueId` for generating wai
 | 400 | `VALIDATION_ERROR` | Show invalid fields and allow correction. |
 | 401 | `AUTHENTICATION_REQUIRED` | Refresh the session or return to sign-in. |
 | 403 | `INSUFFICIENT_PERMISSION` | Show that the action is unavailable to the current role or assignment. |
-| 404 | `RESOURCE_NOT_FOUND` | Refresh stale selections. Use this for another patient's private token to avoid revealing whether it exists. |
-| 409 | `DUPLICATE_CHECK_IN` | Refresh queue state and show that the patient already has an active token in the selected queue. |
-| 409 | `NO_WAITING_TOKENS` | Refresh and show an empty queue. |
-| 409 | `ACTIVE_TOKEN_EXISTS` | Refresh and restore the active token. |
-| 409 | `INVALID_TOKEN_TRANSITION` | Refresh and show the current state. |
+| 404 | `RESOURCE_NOT_FOUND` | Refresh a stale resource selection when a more specific code does not apply. |
+| 403 | `UNAUTHORIZED_QUEUE_ACCESS` | The signed-in staff member lacks access to the requested queue. |
+| 404 | `TOKEN_NOT_FOUND` | The requested token is missing or hidden from the caller. Use the same response for another patient's token. |
+| 404 | `PATIENT_NOT_FOUND` | No accessible patient matches the UHID or submitted patient ID. |
+| 409 | `QUEUE_NOT_AVAILABLE` | An accessible queue is currently closed to walk-ins. Refresh queue selection. |
+| 409 | `DUPLICATE_WALK_IN` | Refresh queue state and show that the patient already has an active token in the selected queue. |
+| 409 | `NO_ELIGIBLE_TOKENS` | Refresh and show that no token can be called now. |
+| 409 | `CONSULTATION_ALREADY_ACTIVE` | Refresh and restore the active token. |
+| 409 | `INVALID_STATE_TRANSITION` | Refresh and show the current state. |
 
 Queue mutations must check authorization before returning workflow conflicts. Duplicate check-in means one active token per patient per queue in this proposal. Any broader duplicate rule remains open.
 
@@ -130,5 +134,5 @@ Start with configurable polling at 5 seconds for staff and public views and 10 s
 - A receptionist can discover a queue and find a seeded patient by UHID, issue a token, and render a slip.
 - Reloading the doctor's dashboard restores the active token and waiting list. A doctor outside the assignment is denied.
 - Competing call-next requests leave a single active token and the other request receives a conflict code.
-- A patient can restore their active token after reload. Another patient receives a 404 for that token.
-- A public QR loads the queue display without sign-in and exposes no private token or patient details.
+- A patient can restore their active token after reload. Another patient receives 404 with `TOKEN_NOT_FOUND` for that token.
+- A public QR opens `/display/board/:publicQueueId` and loads the queue display without sign-in and exposes no private token or patient details.
