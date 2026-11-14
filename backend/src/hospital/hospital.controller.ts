@@ -601,6 +601,41 @@ export class HospitalController {
     });
   }
 
+  @Get('users/me/notifications')
+  async notifications(@CurrentUser('id') actor: string) {
+    const items = await this.db.$queryRaw<
+      Array<{
+        id: string;
+        action: string;
+        appointmentId: string | null;
+        tokenId: string | null;
+        createdAt: Date;
+      }>
+    >`
+      SELECT activity.id, activity.action, activity."appointmentId",
+             activity."tokenId", activity."createdAt"
+      FROM "HospitalActivity" activity
+      WHERE activity.action IN (
+        'APPOINTMENT_BOOKED', 'APPOINTMENT_RESCHEDULED', 'APPOINTMENT_CANCELLED',
+        'APPOINTMENT_CHECKED_IN', 'WALK_IN_ISSUED', 'DOCTOR_CALLED_NEXT',
+        'CONSULTATION_COMPLETED', 'TOKEN_SKIPPED', 'TOKEN_MARKED_MISSED'
+      ) AND (
+        EXISTS (
+          SELECT 1 FROM "Appointment" appointment
+          JOIN "Patient" patient ON patient.id = appointment."patientId"
+          WHERE appointment.id = activity."appointmentId" AND patient."userId" = ${actor}::uuid
+        ) OR EXISTS (
+          SELECT 1 FROM "QueueToken" token
+          JOIN "Patient" patient ON patient.id = token."patientId"
+          WHERE token.id = activity."tokenId" AND patient."userId" = ${actor}::uuid
+        )
+      )
+      ORDER BY activity."createdAt" DESC, activity.id DESC
+      LIMIT 50
+    `;
+    return { items };
+  }
+
   @Get('users/me/queue-tokens')
   async active(
     @CurrentUser('id') actor: string,

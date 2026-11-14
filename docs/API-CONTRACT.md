@@ -274,3 +274,25 @@ Pass the selected dependent's `patientId` with `slotId` to `POST /appointments`.
 Use Supabase email/password signup. If Supabase returns a session, continue to onboarding immediately. If the session is null, show the email confirmation prompt. On the build1 test project, turning off **Confirm email** in the Supabase Email provider avoids sending a signup confirmation email. This dashboard setting is separate from the backend migration. Password recovery still sends email.
 
 For patient identification, render a QR containing only the patient's UHID. Reception scans it into the existing `GET /staff/patients/lookup?patientNumber=...` flow and verifies the returned name. The QR carries no demographic information and grants no access by itself.
+
+### Reschedule to the next available slot
+
+The patient account that owns the booking or an assigned receptionist can send `{ currentSlotId }` to `POST /appointments/{appointmentId}/reschedule`. The request moves a future `BOOKED` appointment to the earliest later available slot in the same queue that does not overlap another active appointment for the patient. It keeps the appointment ID, releases the original slot and returns the updated appointment. This action takes effect immediately and records `APPOINTMENT_RESCHEDULED`.
+
+If the booking changed since it was loaded or can no longer be moved, the API returns `409 INVALID_APPOINTMENT_TRANSITION`. If a suitable slot is unavailable or another booking claims it first, the API returns `409 SLOT_UNAVAILABLE` and preserves the current booking.
+
+### Doctor breaks
+
+The assigned doctor can create a break with `POST /users/me/doctor-breaks` and body `{ startsAt, endsAt }` using ISO timestamps with offsets. A break conflicting with a booked or checked-in appointment returns `409 BREAK_OVERLAPS_BOOKING`. A break overlapping another break returns `409 BREAK_OVERLAP`.
+
+List your breaks with `GET /users/me/doctor-breaks?from=...&to=...` and remove a break with `DELETE /users/me/doctor-breaks/{breakId}` (204). Slot discovery hides slots overlapping breaks. Booking and rescheduling enforce the same restriction. Resolve existing bookings before adding a conflicting break.
+
+### Patient notifications
+
+Call `GET /users/me/notifications` with the patient's bearer token. It returns `{ items }` with up to 50 events for the signed-in account's own and dependent profiles, newest first. Each event contains `id`, `action`, `createdAt`, and nullable `appointmentId` and `tokenId`.
+
+Actions cover bookings, rescheduling, cancellations, check-in, walk-in issuance, call-next, completion, skipped tokens, and missed tokens. Use the IDs to open the existing appointment list or token tracker. Poll this endpoint for updates. This feed provides recorded activity and has no read receipts or scheduled delivery.
+
+### PDF report export
+
+Call `GET /admin/hospitals/{hospitalId}/report.pdf?date=YYYY-MM-DD` with an authorized admin bearer token. It returns a PDF attachment with the daily patient count and department aggregates. It uses the same hospital scope and date range as the JSON report.

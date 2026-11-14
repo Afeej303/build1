@@ -1,3 +1,4 @@
+import PDFDocument from 'pdfkit';
 import { randomUUID } from 'node:crypto';
 import {
   BadRequestException,
@@ -9,6 +10,7 @@ import {
   HttpCode,
   Header,
   Query,
+  StreamableFile,
   NotFoundException,
   Param,
   ParseUUIDPipe,
@@ -112,6 +114,35 @@ export class HospitalAdminController {
     return ['departmentId,tokens,completed,averageWaitMinutes', ...lines].join(
       '\r\n',
     );
+  }
+
+  @Get('hospitals/:hospitalId/report.pdf')
+  async exportPdf(
+    @CurrentUser('id') actor: string,
+    @Param('hospitalId', ParseUUIDPipe) hospitalId: string,
+    @Query('date') date: string,
+  ) {
+    const report = await this.dailyReport(actor, hospitalId, date);
+    const pdf = new PDFDocument({ size: 'A4', margin: 50 });
+    pdf.fontSize(20).text('Daily hospital queue report');
+    pdf.moveDown().fontSize(11).text(report.date);
+    pdf.text('Unique patients: ' + report.uniquePatients);
+    for (const row of report.departments) {
+      pdf.moveDown().fontSize(13).text(row.departmentName);
+      pdf.fontSize(11).text('Queue tokens: ' + row.tokens);
+      pdf.text('Consultations completed: ' + row.completed);
+      pdf.text(
+        'Average wait: ' +
+          (row.averageWaitMinutes === null
+            ? 'Unavailable'
+            : row.averageWaitMinutes + ' minutes'),
+      );
+    }
+    pdf.end();
+    return new StreamableFile(pdf, {
+      type: 'application/pdf',
+      disposition: 'attachment; filename="hospital-report.pdf"',
+    });
   }
 
   private async dailyReport(actor: string, hospitalId: string, date: string) {

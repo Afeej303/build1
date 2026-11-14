@@ -3,6 +3,7 @@ import {
   Body,
   ConflictException,
   Controller,
+  Delete,
   Get,
   ForbiddenException,
   HttpCode,
@@ -31,6 +32,11 @@ class DateRange {
 
   @IsISO8601({ strict: true })
   to!: string;
+}
+
+class RescheduleBody {
+  @IsUUID()
+  currentSlotId!: string;
 }
 
 class Booking {
@@ -363,6 +369,100 @@ export class AppointmentsController {
     });
   }
 
+  @Get('users/me/doctor-breaks')
+  async listBreaks(
+    @CurrentUser('id') doctorId: string,
+    @Query() range: DateRange,
+  ) {
+    const bounds = dateRange(range);
+    const items = await this.db.doctorBreak.findMany({
+      where: {
+        doctorId,
+        startsAt: { lt: bounds.lt },
+        endsAt: { gt: bounds.gte },
+      },
+      orderBy: { startsAt: 'asc' },
+    });
+    return { items };
+  }
+
+  @Post('users/me/doctor-breaks')
+  async createBreak(
+    @CurrentUser('id') doctorId: string,
+    @Body() body: PublishSlot,
+  ) {
+    const startsAt = new Date(body.startsAt);
+    const endsAt = new Date(body.endsAt);
+    if (
+      ![body.startsAt, body.endsAt].every((value) =>
+        /(?:Z|[+-]\d{2}:\d{2})$/i.test(value),
+      ) ||
+      !(startsAt > new Date()) ||
+      !(endsAt > startsAt)
+    ) {
+      throw new BadRequestException(
+        'Provide a future start and later end with time zone offsets',
+      );
+    }
+    return this.db.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "users" WHERE id = ${doctorId}::uuid FOR UPDATE`;
+      if (
+        !(await tx.hospitalQueue.findFirst({
+          where: { doctorId },
+          select: { id: true },
+        }))
+      ) {
+        throw new ForbiddenException('Doctor queue assignment required');
+      }
+      if (
+        await tx.appointment.findFirst({
+          where: {
+            status: { in: ['BOOKED', 'CHECKED_IN'] },
+            slot: {
+              queue: { doctorId },
+              startsAt: { lt: endsAt },
+              endsAt: { gt: startsAt },
+            },
+          },
+          select: { id: true },
+        })
+      ) {
+        throw new ConflictException({
+          code: 'BREAK_OVERLAPS_BOOKING',
+          message: 'Move overlapping bookings before creating this break',
+        });
+      }
+      if (
+        await tx.doctorBreak.findFirst({
+          where: {
+            doctorId,
+            startsAt: { lt: endsAt },
+            endsAt: { gt: startsAt },
+          },
+          select: { id: true },
+        })
+      ) {
+        throw new ConflictException({
+          code: 'BREAK_OVERLAP',
+          message: 'A break already overlaps this time',
+        });
+      }
+      return tx.doctorBreak.create({ data: { doctorId, startsAt, endsAt } });
+    });
+  }
+
+  @Delete('users/me/doctor-breaks/:breakId')
+  @HttpCode(204)
+  async deleteBreak(
+    @CurrentUser('id') doctorId: string,
+    @Param('breakId', ParseUUIDPipe) id: string,
+  ) {
+    const result = await this.db.doctorBreak.deleteMany({
+      where: { id, doctorId },
+    });
+    if (!result.count) throw new NotFoundException('Break not found');
+  }
+
   @Post('queues/:queueId/appointment-slots')
   async publish(
     @CurrentUser('id') userId: string,
@@ -516,10 +616,33 @@ export class AppointmentsController {
         },
         appointments: { none: { status: { in: ['BOOKED', 'CHECKED_IN'] } } },
       },
-      include: slotDetails,
+      include: {
+        queue: {
+          include: {
+            ...queueDetails,
+            doctor: {
+              select: {
+                name: true,
+                doctorBreaks: { where: { endsAt: { gt: startsAt.gte } } },
+              },
+            },
+          },
+        },
+      },
       orderBy: { startsAt: 'asc' },
     });
-    return { items: items.map(slotView) };
+    return {
+      items: items
+        .filter(
+          (slot) =>
+            !slot.queue.doctor?.doctorBreaks.some(
+              (breakTime) =>
+                breakTime.startsAt < slot.endsAt &&
+                breakTime.endsAt > slot.startsAt,
+            ),
+        )
+        .map(slotView),
+    };
   }
 
   @Post('appointments')
@@ -531,6 +654,23 @@ export class AppointmentsController {
           include: slotDetails,
         });
         if (!slot || slot.startsAt <= new Date()) throw slotUnavailable();
+        const doctorId = slot.queue.doctorId;
+        if (doctorId) {
+          await tx.$queryRaw(
+            Prisma.sql`SELECT id FROM "users" WHERE id = ${doctorId}::uuid FOR UPDATE`,
+          );
+          if (
+            await tx.doctorBreak.findFirst({
+              where: {
+                doctorId,
+                startsAt: { lt: slot.endsAt },
+                endsAt: { gt: slot.startsAt },
+              },
+              select: { id: true },
+            })
+          )
+            throw slotUnavailable();
+        }
 
         const patients = await tx.patient.findMany({
           where: {
@@ -626,6 +766,121 @@ export class AppointmentsController {
       orderBy: { slot: { startsAt: 'asc' } },
     });
     return { items: items.map(appointmentView) };
+  }
+
+  @Post('appointments/:appointmentId/reschedule')
+  @HttpCode(200)
+  async reschedule(
+    @CurrentUser('id') userId: string,
+    @Param('appointmentId', ParseUUIDPipe) id: string,
+    @Body() body: RescheduleBody,
+  ) {
+    try {
+      return await this.db.$transaction(async (tx) => {
+        const scope: Prisma.AppointmentWhereInput = {
+          id,
+          OR: [
+            { patient: { userId } },
+            {
+              slot: {
+                queue: { department: { receptionists: { some: { userId } } } },
+              },
+            },
+          ],
+        };
+        const initial = await tx.appointment.findFirst({
+          where: scope,
+          select: {
+            patientId: true,
+            slot: { select: { queue: { select: { doctorId: true } } } },
+          },
+        });
+        const missing = () =>
+          new NotFoundException({
+            code: 'APPOINTMENT_NOT_FOUND',
+            message: 'Appointment not found',
+          });
+        if (!initial) throw missing();
+        const doctorId = initial.slot.queue.doctorId;
+        if (doctorId)
+          await tx.$queryRaw(
+            Prisma.sql`SELECT id FROM "users" WHERE id = ${doctorId}::uuid FOR UPDATE`,
+          );
+        await tx.$queryRaw`SELECT id FROM "Patient" WHERE id = ${initial.patientId}::uuid FOR UPDATE`;
+        await tx.$queryRaw`SELECT id FROM "Appointment" WHERE id = ${id}::uuid FOR UPDATE`;
+        const current = await tx.appointment.findFirst({
+          where: scope,
+          include: appointmentDetails,
+        });
+        if (!current) throw missing();
+        if (
+          current.slotId !== body.currentSlotId ||
+          current.status !== 'BOOKED' ||
+          current.slot.startsAt <= new Date()
+        ) {
+          throw new ConflictException({
+            code: 'INVALID_APPOINTMENT_TRANSITION',
+            message:
+              'Refresh the appointment and confirm it is a future booking',
+          });
+        }
+        const bookings = await tx.appointment.findMany({
+          where: {
+            patientId: current.patientId,
+            id: { not: id },
+            status: { in: ['BOOKED', 'CHECKED_IN'] },
+          },
+          select: { slot: { select: { startsAt: true, endsAt: true } } },
+        });
+        const breaks = doctorId
+          ? await tx.doctorBreak.findMany({
+              where: { doctorId, endsAt: { gt: current.slot.startsAt } },
+              select: { startsAt: true, endsAt: true },
+            })
+          : [];
+        const blocked = [...bookings.map((booking) => booking.slot), ...breaks];
+        const next = await tx.appointmentSlot.findFirst({
+          where: {
+            queueId: current.slot.queueId,
+            startsAt: { gt: current.slot.startsAt },
+            appointments: {
+              none: { status: { in: ['BOOKED', 'CHECKED_IN'] } },
+            },
+            AND: blocked.map((slot) => ({
+              OR: [
+                { endsAt: { lte: slot.startsAt } },
+                { startsAt: { gte: slot.endsAt } },
+              ],
+            })),
+          },
+          orderBy: { startsAt: 'asc' },
+          select: { id: true },
+        });
+        if (!next) throw slotUnavailable();
+        const updated = await tx.appointment.update({
+          where: { id },
+          data: { slotId: next.id },
+          include: appointmentDetails,
+        });
+        await tx.hospitalActivity.create({
+          data: {
+            departmentId: current.slot.queue.departmentId,
+            actorId: userId,
+            action: 'APPOINTMENT_RESCHEDULED',
+            appointmentId: id,
+          },
+        });
+        return appointmentView(updated);
+      });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw slotUnavailable();
+      }
+      throw error;
+    }
   }
 
   @Post('appointments/:appointmentId/cancel')
