@@ -190,12 +190,7 @@ export class AppointmentsController {
   async patientProfiles(@CurrentUser('id') userId: string) {
     const items = await this.db.patient.findMany({
       where: { userId },
-      select: {
-        id: true,
-        hospitalId: true,
-        patientNumber: true,
-        displayName: true,
-      },
+      select: patientProfile,
       orderBy: { id: 'asc' },
     });
     return { items };
