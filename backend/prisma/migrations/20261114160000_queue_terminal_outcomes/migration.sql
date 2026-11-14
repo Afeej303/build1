@@ -1,0 +1,2 @@
+ALTER TYPE "QueueTokenStatus" ADD VALUE 'SKIPPED';
+ALTER TYPE "QueueTokenStatus" ADD VALUE 'MISSED';

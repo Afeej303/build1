@@ -220,3 +220,23 @@ Use the returned `id` as `patientId` in the existing `POST /walk-ins` request. K
 - Booking the same slot twice returns `409 SLOT_UNAVAILABLE`. Booking overlapping slots for the same patient record returns `409 PATIENT_APPOINTMENT_OVERLAP`.
 - `GET /staff/audit-log` returns the latest 100 events across the caller's assigned reception departments. Each item has `id`, `departmentId`, `actorId`, `action`, `createdAt`, `appointmentId`, `tokenId`, and `source`. Booking sources are `ONLINE` and `RECEPTION`. Events start with this release and include appointment booking, cancellation, check-in, walk-in registration and issuance, call-next, and consultation completion. Retried check-in does not add another event.
 - Email/password auth and session refresh use Supabase Auth. Google sign-in requires enabling Google in the Supabase project and configuring the frontend callback.
+
+### Skipped and missed tokens
+
+The assigned doctor can send a bodyless `POST /queue-tokens/{tokenId}/skip` or `POST /queue-tokens/{tokenId}/missed`. Both respond with `200` and the existing token response shape. These actions transition `CALLED` to the terminal status `SKIPPED` or `MISSED` and free the queue for call-next. A token in any other state returns `409 INVALID_STATE_TRANSITION`. Patient tracking exposes the final status, while the public board and active lists omit terminal tokens. The audit log records `TOKEN_SKIPPED` or `TOKEN_MARKED_MISSED`.
+
+### Hospital administration
+
+These endpoints require a bearer token for a user with the global `super_admin` role. Use the existing `GET /users` endpoint to find active application user IDs.
+
+| Method and path | Request | Success |
+|---|---|---|
+| `GET /admin/hospitals` | None | 200 array of hospitals with departments, queues, and receptionist user IDs |
+| `POST /admin/hospitals` | `{ name }` | 201 hospital |
+| `POST /admin/hospitals/{hospitalId}/departments` | `{ name }` | 201 department |
+| `POST /admin/departments/{departmentId}/queues` | `{ name, roomLabel? }` | 201 queue with a generated `publicQueueId` |
+| `PATCH /admin/queues/{queueId}` | `{ doctorId?, acceptingWalkIns? }` | 200 updated queue. Send `doctorId: null` to clear the assignment. |
+| `PUT /admin/departments/{departmentId}/receptionists/{userId}` | None | 200 with `{ departmentId, userId }`. Repeats keep the same assignment. |
+| `DELETE /admin/departments/{departmentId}/receptionists/{userId}` | None | 204, including when the assignment was already absent |
+
+Assign existing active accounts by their app user ID. Users without the global super-admin role receive 403.

@@ -351,6 +351,8 @@ enum QueueTokenStatus {
   WAITING
   CALLED
   COMPLETED
+  SKIPPED
+  MISSED
 }
 
 model Hospital {

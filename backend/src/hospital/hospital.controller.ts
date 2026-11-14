@@ -382,6 +382,48 @@ export class HospitalController {
     @CurrentUser('id') actor: string,
     @Param('tokenId', ParseUUIDPipe) tokenId: string,
   ) {
+    return this.transitionCalledToken(
+      actor,
+      tokenId,
+      'COMPLETED',
+      'CONSULTATION_COMPLETED',
+    );
+  }
+
+  @Post('queue-tokens/:tokenId/skip')
+  @HttpCode(200)
+  skip(
+    @CurrentUser('id') actor: string,
+    @Param('tokenId', ParseUUIDPipe) tokenId: string,
+  ) {
+    return this.transitionCalledToken(
+      actor,
+      tokenId,
+      'SKIPPED',
+      'TOKEN_SKIPPED',
+    );
+  }
+
+  @Post('queue-tokens/:tokenId/missed')
+  @HttpCode(200)
+  missed(
+    @CurrentUser('id') actor: string,
+    @Param('tokenId', ParseUUIDPipe) tokenId: string,
+  ) {
+    return this.transitionCalledToken(
+      actor,
+      tokenId,
+      'MISSED',
+      'TOKEN_MARKED_MISSED',
+    );
+  }
+
+  private async transitionCalledToken(
+    actor: string,
+    tokenId: string,
+    status: 'COMPLETED' | 'SKIPPED' | 'MISSED',
+    action: string,
+  ) {
     return this.db.$transaction(async (tx) => {
       const token = await tx.queueToken.findUnique({ where: { id: tokenId } });
       if (!token) throw tokenMissing();
@@ -389,12 +431,12 @@ export class HospitalController {
       if (queue.doctorId !== actor) this.denyQueue();
       const changed = await tx.queueToken.updateMany({
         where: { id: tokenId, status: 'CALLED' },
-        data: { status: 'COMPLETED' },
+        data: { status },
       });
       if (!changed.count) {
         throw new ConflictException({
           code: 'INVALID_STATE_TRANSITION',
-          message: 'Only an active token can be completed',
+          message: 'Only a called token can be transitioned',
         });
       }
       await tx.hospitalQueue.update({
@@ -406,7 +448,7 @@ export class HospitalController {
         queue.departmentId,
         actor,
         tokenId,
-        'CONSULTATION_COMPLETED',
+        action,
       );
       return tokenView(
         await tx.queueToken.findUniqueOrThrow({ where: { id: tokenId } }),
