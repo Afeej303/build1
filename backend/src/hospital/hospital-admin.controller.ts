@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import {
   BadRequestException,
   Body,
+  ConflictException,
   Controller,
   Delete,
   Get,
@@ -30,6 +31,25 @@ import { CurrentUser } from '../common/decorators/current-user.decorator.js';
 import { AuthorizationLookupService } from '../common/services/authorization-lookup.service.js';
 import { Roles } from '../common/decorators/roles.decorator.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+
+/** Roles a hospital_admin may never assign. */
+export const HOSPITAL_ADMIN_FORBIDDEN_ROLES = ['super_admin', 'hospital_admin'] as const;
+
+/** Maximum receptionists per department (application-layer limit). */
+export const MAX_RECEPTIONISTS_PER_DEPARTMENT = 5;
+
+/**
+ * Throws 403 when a hospital_admin tries to assign a privileged role.
+ * Call this BEFORE any Supabase or DB call.
+ */
+export function assertAssignableRole(role: string): void {
+  if ((HOSPITAL_ADMIN_FORBIDDEN_ROLES as readonly string[]).includes(role)) {
+    throw new ForbiddenException({
+      code: 'ROLE_NOT_ASSIGNABLE',
+      message: 'Hospital administrators cannot assign this role',
+    });
+  }
+}
 
 class NameBody {
   @IsString()
@@ -279,10 +299,25 @@ export class HospitalAdminController {
     @Param('departmentId', ParseUUIDPipe) departmentId: string,
     @Param('userId', ParseUUIDPipe) userId: string,
   ) {
+    // Task A: validate department belongs to actor's hospital
+    const hospital = await this.hospitalScope(actor);
     if (
-      !(await this.db.department.findUnique({ where: { id: departmentId } }))
+      !(await this.db.department.findFirst({
+        where: { id: departmentId, hospital },
+        select: { id: true },
+      }))
     ) {
       throw new NotFoundException('Department not found');
+    }
+    // Task B: enforce per-department receptionist limit
+    const currentCount = await this.db.receptionAssignment.count({
+      where: { departmentId },
+    });
+    if (currentCount >= MAX_RECEPTIONISTS_PER_DEPARTMENT) {
+      throw new ConflictException({
+        code: 'RECEPTIONIST_LIMIT_REACHED',
+        message: 'Department receptionist limit reached',
+      });
     }
     await this.ensureActiveUser(userId);
     const assignment = { departmentId, userId };
@@ -311,6 +346,70 @@ export class HospitalAdminController {
     await this.db.receptionAssignment.deleteMany({
       where: { departmentId, userId, department: { hospital } },
     });
+  }
+
+  // Task C: list receptionists for a department (scoped to actor's hospital)
+  @Get('departments/:departmentId/receptionists')
+  async listDepartmentReceptionists(
+    @CurrentUser('id') actor: string,
+    @Param('departmentId', ParseUUIDPipe) departmentId: string,
+  ) {
+    const hospital = await this.hospitalScope(actor);
+    if (
+      !(await this.db.department.findFirst({
+        where: { id: departmentId, hospital },
+        select: { id: true },
+      }))
+    ) {
+      throw new NotFoundException('Department not found');
+    }
+    const assignments = await this.db.receptionAssignment.findMany({
+      where: { departmentId },
+      include: {
+        user: { select: { id: true, name: true, email: true, status: true } },
+      },
+    });
+    return {
+      items: assignments.map((a) => ({
+        userId: a.userId,
+        name: a.user.name,
+        email: a.user.email,
+        status: a.user.status,
+      })),
+    };
+  }
+
+  // Task E: list all queues for a hospital (admin view, scoped)
+  @Get('hospitals/:hospitalId/queues')
+  async listHospitalQueues(
+    @CurrentUser('id') actor: string,
+    @Param('hospitalId', ParseUUIDPipe) hospitalId: string,
+  ) {
+    const hospital = await this.hospitalScope(actor);
+    const h = await this.db.hospital.findFirst({
+      where: { id: hospitalId, ...hospital },
+      select: { id: true },
+    });
+    if (!h) throw new NotFoundException('Hospital not found');
+    const queues = await this.db.hospitalQueue.findMany({
+      where: { department: { hospitalId } },
+      include: {
+        department: { select: { id: true, name: true } },
+        doctor: { select: { id: true, name: true } },
+      },
+      orderBy: [{ departmentId: 'asc' }, { name: 'asc' }],
+    });
+    return queues.map((q) => ({
+      id: q.id,
+      name: q.name,
+      departmentId: q.departmentId,
+      departmentName: q.department.name,
+      roomLabel: q.roomLabel,
+      doctorId: q.doctorId,
+      doctorName: q.doctor?.name ?? null,
+      acceptingWalkIns: q.acceptingWalkIns,
+      publicQueueId: q.publicQueueId,
+    }));
   }
 
   @Roles('super_admin')
@@ -346,6 +445,10 @@ export class HospitalAdminController {
     await this.db.hospitalAdminAssignment.deleteMany({
       where: { hospitalId, userId },
     });
+  }
+
+  private assertAssignableRole(role: string): void {
+    assertAssignableRole(role);
   }
 
   private async hospitalScope(actor: string) {
