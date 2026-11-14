@@ -37,7 +37,7 @@ class IssueWalkIn {
   queueId!: string;
 }
 
-function tokenView(token: Token) {
+export function tokenView(token: Token) {
   return {
     id: token.id,
     queueId: token.queueId,

@@ -66,3 +66,7 @@ Proposed persistence invariants:
 - Claim the next eligible token and complete an active token in transactional operations. Recheck the actor scope and relevant state before writing. Order by issue time and break ties by the unique database-generated sequence.
 - Scope UHID lookup to the receptionist's hospital. Return a patient's private token only through their linked app account. The public board query projects queue labels, display number, aggregate counts and timestamps.
 - Seed synthetic patients and assigned staff for review. An unlinked walk-in patient can receive a token. Guest and dependent account-linking rules are TBD.
+
+## Appointment slice proposal
+
+Add a published appointment slot tied to a hospital queue with start and end timestamps. An appointment references a slot and patient and records its status. Keep cancelled rows for history and enforce one active booking per slot with a database constraint. Validate the patient and slot belong to the same hospital. Booking and cancellation update availability transactionally. Confirm doctor overlap rules across queues, the hospital timezone, and eligibility policy before defining the physical schema.

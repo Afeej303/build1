@@ -386,6 +386,7 @@ model Patient {
   displayName String
   hospital    Hospital     @relation(fields: [hospitalId], references: [id])
   user        User?        @relation(fields: [userId], references: [id])
+  appointments Appointment[]
   tokens      QueueToken[]
 
   @@unique([hospitalId, patientNumber])
@@ -403,6 +404,7 @@ model HospitalQueue {
   updatedAt         DateTime     @updatedAt
   department        Department   @relation(fields: [departmentId], references: [id])
   doctor            User?        @relation(fields: [doctorId], references: [id])
+  slots             AppointmentSlot[]
   tokens            QueueToken[]
 
   @@index([departmentId])
@@ -411,6 +413,7 @@ model HospitalQueue {
 
 model QueueToken {
   id          String           @id @default(uuid()) @db.Uuid
+  appointment Appointment?
   sequence    BigInt           @unique @default(autoincrement())
   patientId   String           @db.Uuid
   queueId     String           @db.Uuid
@@ -422,5 +425,36 @@ model QueueToken {
   queue       HospitalQueue    @relation(fields: [queueId], references: [id])
 
   @@index([queueId, status, issuedAt, sequence])
+  @@index([patientId])
+}
+
+
+enum AppointmentStatus {
+  BOOKED
+  CANCELLED
+  CHECKED_IN
+}
+
+model AppointmentSlot {
+  id String @id @default(uuid()) @db.Uuid
+  queueId String @db.Uuid
+  startsAt DateTime
+  endsAt DateTime
+  queue HospitalQueue @relation(fields: [queueId], references: [id])
+  appointments Appointment[]
+
+  @@unique([queueId, startsAt])
+}
+
+model Appointment {
+  id String @id @default(uuid()) @db.Uuid
+  slotId String @db.Uuid
+  patientId String @db.Uuid
+  status AppointmentStatus @default(BOOKED)
+  queueTokenId String? @unique @db.Uuid
+  queueToken QueueToken? @relation(fields: [queueTokenId], references: [id], onDelete: Restrict)
+  slot AppointmentSlot @relation(fields: [slotId], references: [id])
+  patient Patient @relation(fields: [patientId], references: [id])
+
   @@index([patientId])
 }

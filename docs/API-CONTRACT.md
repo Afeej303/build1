@@ -140,3 +140,56 @@ Start with configurable polling at 5 seconds for staff and public views and 10 s
 ## First workflow ordering
 
 Call the oldest eligible waiting token first, ordered by issue time then a unique database-generated sequence. The waiting list and call-next operation use the same ordering. Priority override behavior remains open for team confirmation.
+
+## Appointment booking and cancellation draft
+
+Proposed for M1 and M2 review. This slice covers published doctor slots, booking, listing and cancellation. Existing walk-ins continue through the queue workflow. Automatic rescheduling, reminders and appointment check-in rules need separate agreement.
+
+| ID | Proposed interface | Access | Success |
+|---|---|---|---|
+| API-007 | `GET /queues/{queueId}/appointment-slots?from=...&to=...` | Signed-in patient or assigned staff | 200 with `{ items }` of published, available slots in a bounded date range |
+| API-008 | `POST /appointments` | Patient for their own record in the queue's hospital, or receptionist assigned to its department | 201 with the booked appointment |
+| API-009 | `GET /users/me/appointments?from=...&to=...` | Signed-in patient or assigned doctor | 200 with `{ items }` scoped to the caller's patient record or assigned queues |
+| API-010 | `POST /appointments/{appointmentId}/cancel` | Owning patient or assigned receptionist | 200 with the cancelled appointment |
+
+A slot includes `id`, `queueId`, `startsAt`, `endsAt`, `departmentName`, and nullable `doctorName` and `roomLabel`. Send UTC timestamps and display them in the agreed hospital timezone. A booking request includes `slotId`. Reception also sends `patientId` from UHID lookup. Patient requests derive the patient record from the authenticated app account and the slot's hospital.
+
+Proposed booking response:
+
+```json
+{
+  "id": "<appointment ID>",
+  "status": "BOOKED",
+  "slot": {
+    "id": "<slot ID>",
+    "queueId": "<queue ID>",
+    "startsAt": "2026-11-15T05:30:00Z",
+    "endsAt": "2026-11-15T05:45:00Z",
+    "departmentName": "General Medicine",
+    "doctorName": "Demo Doctor",
+    "roomLabel": "Demo Room 1"
+  }
+}
+```
+
+The response uses the existing error envelope. Proposed codes are `SLOT_UNAVAILABLE` (409) when a published slot becomes unavailable, `APPOINTMENT_NOT_FOUND` (404) when missing or hidden, and `INVALID_APPOINTMENT_TRANSITION` (409) when cancellation is disallowed. Apply ownership and staff-scope checks before disclosing appointment details.
+
+### Acceptance checks
+
+- A patient can discover a published slot, book it and see it again after refresh.
+- Two concurrent booking attempts for one slot leave one active booking. The other request receives `SLOT_UNAVAILABLE`.
+- A receptionist can book in their assigned department for a patient in the same hospital. A receptionist outside that scope cannot book.
+- An assigned doctor can list appointments for their queues. Another patient cannot access or cancel a booking they do not own.
+- A successful cancellation releases a future slot if it remains published and eligible for booking.
+
+### Open decisions for M1 and M2
+
+- Who publishes and edits slots, and how the patient finds queues to book.
+- Hospital timezone, allowed booking range, slot length and cancellation cutoff.
+- How a patient with multiple matching records selects the right record and which staff fields the appointment list needs.
+- How booked patients check in and enter the live queue, and when automatic rescheduling asks for confirmation.
+
+### Publishing and check-in
+
+- `POST /queues/{queueId}/appointment-slots` accepts `{ startsAt, endsAt }` as ISO timestamps with explicit offsets. The assigned doctor receives `201` with the slot shape. Overlapping slots across their queues return `409 APPOINTMENT_SLOT_OVERLAP`.
+- `POST /appointments/{appointmentId}/check-in` accepts no body. Assigned receptionists receive `200` with the core queue token shape. A booked appointment can be checked in on its calendar day in Asia/Kolkata. Repeat requests return the same token. A separate active token in the same queue returns `409 DUPLICATE_WALK_IN`.
