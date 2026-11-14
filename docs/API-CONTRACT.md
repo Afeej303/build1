@@ -296,3 +296,378 @@ Actions cover bookings, rescheduling, cancellations, check-in, walk-in issuance,
 ### PDF report export
 
 Call `GET /admin/hospitals/{hospitalId}/report.pdf?date=YYYY-MM-DD` with an authorized admin bearer token. It returns a PDF attachment with the daily patient count and department aggregates. It uses the same hospital scope and date range as the JSON report.
+
+## Admin Center API (SaaS Multi-Hospital)
+
+This section documents the administrative and operational endpoints supporting multi-hospital SaaS provisioning, counter management, operational metrics, and client error reporting.
+
+### Summary of endpoints
+
+| ID | Method | Path | Access role | Description | Success |
+|---|---|---|---|---|---|
+| ADM-001 | `POST` | `/admin/hospitals/:hospitalId/provision-admin` | `super_admin` | Create Supabase auth user and assign `hospital_admin` role | 201 Created with provisioned admin profile |
+| ADM-002 | `POST` | `/admin/hospitals/:hospitalId/staff` | `hospital_admin` | Provision doctor or receptionist account within tenant | 201 Created with staff details |
+| ADM-003 | `GET` | `/admin/hospitals/:hospitalId/staff` | `hospital_admin`, `super_admin` | List all staff members in the hospital | 200 OK with staff items |
+| ADM-004 | `PATCH` | `/admin/hospitals/:hospitalId/staff/:userId/status` | `hospital_admin` | Update staff account status (`ACTIVE`, `INACTIVE`, `SUSPENDED`) | 200 OK with updated user status |
+| ADM-005 | `PUT` | `/admin/departments/:departmentId/receptionists/:userId` | `hospital_admin`, `super_admin` | Assign receptionist to department (enforces isolation + max 5 per dept) | 200 OK with assignment |
+| ADM-006 | `DELETE` | `/admin/departments/:departmentId/receptionists/:userId` | `hospital_admin`, `super_admin` | Remove receptionist assignment from department | 204 No Content |
+| ADM-007 | `GET` | `/admin/departments/:departmentId/receptionists` | `hospital_admin`, `super_admin` | List receptionists assigned to a department | 200 OK with receptionist array |
+| ADM-008 | `GET` | `/admin/hospitals/:hospitalId/queues` | `hospital_admin`, `super_admin` | List all queues across departments in hospital | 200 OK with queue items |
+| ADM-009 | `GET` | `/admin/hospitals/:hospitalId/activity?date=YYYY-MM-DD` | `hospital_admin`, `super_admin` | Daily operational activity log | 200 OK with activity events |
+| ADM-010 | `GET` | `/admin/hospitals/:hospitalId/stats/doctors?date=YYYY-MM-DD` | `hospital_admin`, `super_admin` | Doctor consultation & performance metrics | 200 OK with doctor metrics |
+| ADM-011 | `GET` | `/admin/hospitals/:hospitalId/stats/receptionists?date=YYYY-MM-DD` | `hospital_admin`, `super_admin` | Receptionist token issuance and check-in metrics | 200 OK with receptionist metrics |
+| ADM-012 | `GET` | `/admin/hospitals/:hospitalId/stats/appointments?date=YYYY-MM-DD` | `hospital_admin`, `super_admin` | Aggregated appointment status counts | 200 OK with appointment metrics |
+| ADM-013 | `GET` | `/admin/stats` | `super_admin` | Platform-wide operational statistics | 200 OK with global statistics |
+| ADM-014 | `POST` | `/incidents` | Any authenticated user | Submit client runtime error / exception report | 201 Created with incident confirmation |
+| ADM-015 | `GET` | `/admin/incidents` | `super_admin` | List incident reports (filters: `status`, `severity`) | 200 OK with incident list |
+| ADM-016 | `GET` | `/admin/incidents/:id` | `super_admin` | Inspect full incident details with diagnostic payload | 200 OK with incident details |
+| ADM-017 | `PATCH` | `/admin/incidents/:id` | `super_admin` | Update incident status (`OPEN`, `INVESTIGATING`, `RESOLVED`) | 200 OK with updated incident |
+
+---
+
+### Endpoint specifications and payloads
+
+#### ADM-001 · Provision hospital administrator
+- **Access:** `super_admin` only
+- **Behavior:** Invokes Supabase Admin API to create auth credentials (`email_confirm: true`, no password required). Creates local `User` record, assigns `HospitalAdminAssignment`, and grants `hospital_admin` global role. User completes authentication via Supabase magic link / password reset.
+
+**Request:**
+```json
+{
+  "email": "admin.metro@example.com",
+  "name": "Metro Admin User"
+}
+```
+
+**Success Response (201 Created):**
+```json
+{
+  "userId": "usr_9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+  "email": "admin.metro@example.com",
+  "name": "Metro Admin User",
+  "hospitalId": "hosp_1a2b3c4d",
+  "supabaseUserId": "sup_8f7e6d5c-4b3a-2109-8765-43210fedcba9"
+}
+```
+
+#### ADM-002 · Provision staff member
+- **Access:** `hospital_admin` (scoped to their own hospital)
+- **Rules:** Cannot assign `hospital_admin` or `super_admin` role (`403 ROLE_NOT_ASSIGNABLE`). If `role` is `receptionist` and `departmentId` is supplied, creates a `ReceptionAssignment`.
+
+**Request:**
+```json
+{
+  "email": "dr.sharma@example.com",
+  "name": "Dr. Amit Sharma",
+  "role": "doctor",
+  "departmentId": "dept_cardiology"
+}
+```
+
+**Success Response (201 Created):**
+```json
+{
+  "userId": "usr_2c3d4e5f-6a7b-8c9d-0e1f-2a3b4c5d6e7f",
+  "email": "dr.sharma@example.com",
+  "name": "Dr. Amit Sharma",
+  "role": "doctor",
+  "hospitalId": "hosp_1a2b3c4d",
+  "departmentId": "dept_cardiology"
+}
+```
+
+#### ADM-003 · List hospital staff
+- **Access:** `hospital_admin` (own hospital), `super_admin`
+- **Success Response (200 OK):**
+```json
+{
+  "items": [
+    {
+      "id": "usr_2c3d4e5f-6a7b-8c9d-0e1f-2a3b4c5d6e7f",
+      "name": "Dr. Amit Sharma",
+      "email": "dr.sharma@example.com",
+      "status": "ACTIVE",
+      "role": "doctor",
+      "departmentAssignments": [
+        {
+          "departmentId": "dept_cardiology",
+          "departmentName": "Cardiology"
+        }
+      ]
+    }
+  ]
+}
+```
+
+#### ADM-004 · Update staff status
+- **Access:** `hospital_admin` (scoped to own staff)
+- **Request:**
+```json
+{
+  "status": "SUSPENDED"
+}
+```
+*Allowed status values: `ACTIVE`, `INACTIVE`, `SUSPENDED`.*
+
+- **Success Response (200 OK):**
+```json
+{
+  "id": "usr_2c3d4e5f-6a7b-8c9d-0e1f-2a3b4c5d6e7f",
+  "email": "dr.sharma@example.com",
+  "name": "Dr. Amit Sharma",
+  "status": "SUSPENDED"
+}
+```
+
+#### ADM-005 · Assign receptionist with limit check
+- **Access:** `hospital_admin` (own hospital), `super_admin`
+- **Rules:** Tenant isolation enforced against department's hospital. Maximum 5 receptionists per department. Re-assigning an already assigned receptionist returns 200 without duplicate count.
+- **Request:** No body. Path parameters: `:departmentId`, `:userId`.
+- **Success Response (200 OK):**
+```json
+{
+  "departmentId": "dept_cardiology",
+  "userId": "usr_receptionist_01"
+}
+```
+
+#### ADM-006 · Remove receptionist assignment
+- **Access:** `hospital_admin` (own hospital), `super_admin`
+- **Request:** No body.
+- **Success Response (204 No Content)**
+
+#### ADM-007 · List department receptionists
+- **Access:** `hospital_admin` (own hospital), `super_admin`
+- **Success Response (200 OK):**
+```json
+{
+  "items": [
+    {
+      "userId": "usr_receptionist_01",
+      "name": "Rajesh Kumar",
+      "email": "rajesh@example.com",
+      "status": "ACTIVE"
+    }
+  ]
+}
+```
+
+#### ADM-008 · List hospital queues
+- **Access:** `hospital_admin` (own hospital), `super_admin`
+- **Success Response (200 OK):**
+```json
+{
+  "items": [
+    {
+      "id": "q_cardio_1",
+      "name": "Cardiology General Queue",
+      "departmentId": "dept_cardiology",
+      "departmentName": "Cardiology",
+      "roomLabel": "Room 101",
+      "doctorId": "usr_2c3d4e5f-6a7b-8c9d-0e1f-2a3b4c5d6e7f",
+      "doctorName": "Dr. Amit Sharma",
+      "acceptingWalkIns": true,
+      "publicQueueId": "cardio-gen-101"
+    }
+  ]
+}
+```
+
+#### ADM-009 · Hospital activity log
+- **Access:** `hospital_admin` (own hospital), `super_admin`
+- **Query Params:** `date` (format: `YYYY-MM-DD`, default: today)
+- **Success Response (200 OK):**
+```json
+{
+  "date": "2026-11-14",
+  "hospitalId": "hosp_1a2b3c4d",
+  "events": [
+    {
+      "id": "evt_001",
+      "timestamp": "2026-11-14T08:30:00Z",
+      "type": "TOKEN_ISSUED",
+      "actorId": "usr_receptionist_01",
+      "departmentId": "dept_cardiology",
+      "details": "Walk-in token A-014 issued"
+    }
+  ]
+}
+```
+
+#### ADM-010 · Doctor performance stats
+- **Access:** `hospital_admin` (own hospital), `super_admin`
+- **Query Params:** `date` (format: `YYYY-MM-DD`)
+- **Success Response (200 OK):**
+```json
+{
+  "date": "2026-11-14",
+  "hospitalId": "hosp_1a2b3c4d",
+  "doctors": [
+    {
+      "doctorId": "usr_2c3d4e5f-6a7b-8c9d-0e1f-2a3b4c5d6e7f",
+      "doctorName": "Dr. Amit Sharma",
+      "departmentName": "Cardiology",
+      "consultationsCompleted": 18,
+      "averageConsultationMinutes": 12.5,
+      "skippedTokens": 1,
+      "missedTokens": 0
+    }
+  ]
+}
+```
+
+#### ADM-011 · Receptionist activity stats
+- **Access:** `hospital_admin` (own hospital), `super_admin`
+- **Query Params:** `date` (format: `YYYY-MM-DD`)
+- **Success Response (200 OK):**
+```json
+{
+  "date": "2026-11-14",
+  "hospitalId": "hosp_1a2b3c4d",
+  "receptionists": [
+    {
+      "receptionistId": "usr_receptionist_01",
+      "name": "Rajesh Kumar",
+      "tokensIssued": 42,
+      "appointmentsCheckedIn": 15
+    }
+  ]
+}
+```
+
+#### ADM-012 · Hospital appointment stats
+- **Access:** `hospital_admin` (own hospital), `super_admin`
+- **Query Params:** `date` (format: `YYYY-MM-DD`)
+- **Success Response (200 OK):**
+```json
+{
+  "date": "2026-11-14",
+  "hospitalId": "hosp_1a2b3c4d",
+  "summary": {
+    "totalBooked": 60,
+    "checkedIn": 52,
+    "cancelled": 5,
+    "completed": 48,
+    "noShow": 3
+  }
+}
+```
+
+#### ADM-013 · Platform operational statistics
+- **Access:** `super_admin` only
+- **Success Response (200 OK):**
+```json
+{
+  "totalHospitals": 12,
+  "activeDoctors": 84,
+  "activeReceptionists": 36,
+  "activeQueues": 92,
+  "tokensIssuedToday": 1420,
+  "consultationsCompletedToday": 1285,
+  "openIncidents": 2
+}
+```
+
+#### ADM-014 · Submit incident report
+- **Access:** Any authenticated user
+- **Rate Limit:** 10 requests / minute / user
+- **Request:**
+```json
+{
+  "severity": "ERROR",
+  "message": "Cannot read properties of undefined (reading 'queueId')",
+  "component": "QueueDashboard",
+  "url": "/doctor/dashboard",
+  "diagnostics": {
+    "stack": "TypeError: Cannot read properties...",
+    "appVersion": "1.0.0",
+    "userAgent": "Mozilla/5.0..."
+  }
+}
+```
+*Allowed severity values: `INFO`, `WARNING`, `ERROR`, `CRITICAL`.*
+
+- **Success Response (201 Created):**
+```json
+{
+  "id": "inc_7a8b9c0d-1e2f",
+  "status": "OPEN",
+  "createdAt": "2026-11-14T09:15:00Z"
+}
+```
+
+#### ADM-015 · List incidents
+- **Access:** `super_admin` only
+- **Query Params:** `status` (`OPEN`, `INVESTIGATING`, `RESOLVED`), `severity` (`INFO`, `WARNING`, `ERROR`, `CRITICAL`), `limit`, `offset`
+- **Success Response (200 OK):**
+```json
+{
+  "items": [
+    {
+      "id": "inc_7a8b9c0d-1e2f",
+      "severity": "ERROR",
+      "message": "Cannot read properties of undefined (reading 'queueId')",
+      "component": "QueueDashboard",
+      "status": "OPEN",
+      "reporterId": "usr_doctor_12",
+      "createdAt": "2026-11-14T09:15:00Z"
+    }
+  ]
+}
+```
+
+#### ADM-016 · Get incident details
+- **Access:** `super_admin` only
+- **Success Response (200 OK):**
+```json
+{
+  "id": "inc_7a8b9c0d-1e2f",
+  "severity": "ERROR",
+  "message": "Cannot read properties of undefined (reading 'queueId')",
+  "component": "QueueDashboard",
+  "url": "/doctor/dashboard",
+  "status": "OPEN",
+  "reporterId": "usr_doctor_12",
+  "diagnostics": {
+    "stack": "TypeError: Cannot read properties...",
+    "appVersion": "1.0.0",
+    "userAgent": "Mozilla/5.0..."
+  },
+  "createdAt": "2026-11-14T09:15:00Z",
+  "updatedAt": "2026-11-14T09:15:00Z"
+}
+```
+
+#### ADM-017 · Update incident status
+- **Access:** `super_admin` only
+- **Request:**
+```json
+{
+  "status": "RESOLVED"
+}
+```
+*Allowed status values: `OPEN`, `INVESTIGATING`, `RESOLVED`.*
+
+- **Success Response (200 OK):**
+```json
+{
+  "id": "inc_7a8b9c0d-1e2f",
+  "status": "RESOLVED",
+  "updatedAt": "2026-11-14T09:45:00Z"
+}
+```
+
+---
+
+### Machine-readable error codes (Admin & Incidents)
+
+| HTTP | Code | Description & Client Handling |
+|---|---|---|
+| 409 | `RECEPTIONIST_LIMIT_REACHED` | Returned by `PUT /admin/departments/:departmentId/receptionists/:userId` when a department already has 5 active receptionists. UI should prompt user to remove an existing receptionist first. |
+| 403 | `ROLE_NOT_ASSIGNABLE` | Returned by `POST /admin/hospitals/:hospitalId/staff` when a `hospital_admin` attempts to provision forbidden roles (`hospital_admin` or `super_admin`). |
+| 409 | `EMAIL_ALREADY_REGISTERED` | Returned by provisioning endpoints when the provided email already exists in Supabase identity provider. Prompt user to use a different email or link existing account. |
+| 400 | `VALIDATION_ERROR` | Required fields missing or malformed (e.g. invalid email format, unknown status or severity enum value). |
+| 401 | `AUTHENTICATION_REQUIRED` | Missing, expired, or invalid Supabase bearer token. |
+| 403 | `INSUFFICIENT_PERMISSION` | Caller does not possess the required global role or tenant scope. |
+| 404 | `RESOURCE_NOT_FOUND` | Specified hospital, department, queue, user, or incident does not exist within the caller's authorized scope. |
+| 429 | `TOO_MANY_REQUESTS` | Rate limit exceeded on `POST /incidents` (max 10 submissions/min). Client should back off. |

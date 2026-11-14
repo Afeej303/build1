@@ -16,15 +16,18 @@
 | P-01 | Inspect starter project and map actual structure | M2 + M3 | High | Ready | Stack, paths and constraints documented |
 | P-02 | Define MVP boundary and acceptance criteria | All | High | Ready | `PROJECT.md` agreed |
 | P-03 | Select M3 extra features | All; M3 documents | High | Ready | `EXTRA-FEATURE-PLAN.md` approved before coding |
-| P-04 | Agree architecture and API contracts | M1 + M2; M3 consulted | High | In progress | `ARCHITECTURE.md` and `API-CONTRACT.md` usable. First queue contract updated for M1 acceptance review. |
+| P-04 | Agree architecture and API contracts | M1 + M2; M3 consulted | High | Done | `ARCHITECTURE.md` and `API-CONTRACT.md` updated with complete Admin Center & SaaS APIs |
 | P-05 | Document database/data model | M2 | High | In progress | First-workflow data model drafted in `DATABASE-SCHEMA.md`. |
 
 ## Implementation tasks
 
 | ID | Task | Owner | Priority | Status | Depends on | Acceptance criteria |
 |---|---|---|---|---|---|---|
-| MVP-01 | Build complete MVP backend and business logic | M2 | High | In progress | P-01, P-02, P-04, P-05 | MVP server-side acceptance criteria pass |
+| MVP-01 | Build complete MVP backend and business logic | M2 | High | Review | P-01, P-02, P-04, P-05 | MVP server-side acceptance criteria pass |
 | MVP-02 | Build MVP frontend and connect to backend | M1 | High | Backlog | P-02, P-04 | Critical user journeys work against M2 contract |
+| MVP-03 | Connect Admin Center to new provisioning endpoints | M1 | High | Backlog | MVP-01 | M1 can provision hospital admins and staff via UI |
+| MVP-04 | Connect Admin Center stats to new stat endpoints | M1 | Medium | Backlog | MVP-01 | Stats dashboards show live data |
+| MVP-05 | Frontend implements incident reporting on error boundaries | M1 | Medium | Backlog | MVP-01 | Error boundaries POST to /incidents |
 | EXT-01 | Build selected P1 enhancements | M3 | Agreed | Backlog | P-03, relevant contracts | Enhancement criteria and tests pass |
 | INT-01 | Integrate and verify end-to-end demo | All | High | Backlog | MVP-01, MVP-02, EXT-01 as applicable | MVP works; selected enhancements integrate without breaking it |
 
@@ -42,4 +45,4 @@
 
 | Blocker | Impact | Needed from | Status |
 |---|---|---|---|
-| [None / TODO] | | | |
+| None currently | - | - | - |
