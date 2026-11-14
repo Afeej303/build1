@@ -803,9 +803,9 @@ function AppointmentsHistoryTab({
 }) {
   const queryClient = useQueryClient();
 
-  // Query appointments for last 30 days to next 30 days
-  const fromIso = new Date(Date.now() - 30 * 86400000).toISOString();
-  const toIso = new Date(Date.now() + 30 * 86400000).toISOString();
+  // Query appointments for last 7 days to next 21 days (28 days total, <= 31-day backend limit)
+  const fromIso = new Date(Date.now() - 7 * 86400000).toISOString();
+  const toIso = new Date(Date.now() + 21 * 86400000).toISOString();
 
   const {
     data: appointmentsData,

@@ -562,9 +562,22 @@ class ApiClient {
 
   // GET /users/me/appointments?from=...&to=...
   public async getMyAppointments(from: string, to: string): Promise<{ items: any[] }> {
+    let safeTo = to;
+    try {
+      const fromDate = new Date(from);
+      const toDate = new Date(to);
+      if (!isNaN(fromDate.getTime()) && !isNaN(toDate.getTime())) {
+        const maxTo = new Date(fromDate.getTime() + 30 * 86_400_000);
+        if (toDate > maxTo) {
+          safeTo = maxTo.toISOString();
+        }
+      }
+    } catch {
+      // Keep original to if parsing fails
+    }
     const headers = await this.getAuthHeaders();
     const res = await fetch(
-      `${API_BASE_URL}/users/me/appointments?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+      `${API_BASE_URL}/users/me/appointments?from=${encodeURIComponent(from)}&to=${encodeURIComponent(safeTo)}`,
       { headers }
     );
     if (!res.ok) {

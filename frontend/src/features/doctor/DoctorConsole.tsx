@@ -22,6 +22,64 @@ import { apiClient } from '../../lib/api-client';
 import { QueueDashboard, StaffQueueItem } from '../../types/contract';
 import { cn } from '../../lib/utils';
 
+const getIsoTimezoneOffset = (): string => {
+  const offsetMinutes = -new Date().getTimezoneOffset();
+  if (isNaN(offsetMinutes)) return '+05:30';
+  const sign = offsetMinutes >= 0 ? '+' : '-';
+  const hours = String(Math.floor(Math.abs(offsetMinutes) / 60)).padStart(2, '0');
+  const minutes = String(Math.abs(offsetMinutes) % 60).padStart(2, '0');
+  return `${sign}${hours}:${minutes}`;
+};
+
+const getDefaultSlotSchedule = (): { date: string; startTime: string; endTime: string } => {
+  const now = new Date();
+  const currentHour = now.getHours();
+  const pad = (n: number) => String(n).padStart(2, '0');
+
+  // If >= 20:00 (8 PM) or < 08:00 (8 AM), default to tomorrow (or today if early morning) at 09:00 - 09:30
+  if (currentHour >= 20 || currentHour < 8) {
+    const target = new Date(now);
+    if (currentHour >= 20) {
+      target.setDate(target.getDate() + 1);
+    }
+    const year = target.getFullYear();
+    const month = pad(target.getMonth() + 1);
+    const day = pad(target.getDate());
+    return {
+      date: `${year}-${month}-${day}`,
+      startTime: '09:00',
+      endTime: '09:30',
+    };
+  }
+
+  // Otherwise, round to next 30-minute block from now
+  const start = new Date(now);
+  const minutes = start.getMinutes();
+  if (minutes < 30) {
+    start.setMinutes(30, 0, 0);
+  } else {
+    start.setHours(start.getHours() + 1, 0, 0, 0);
+  }
+
+  if (start.getHours() >= 20) {
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    return {
+      date: `${tomorrow.getFullYear()}-${pad(tomorrow.getMonth() + 1)}-${pad(tomorrow.getDate())}`,
+      startTime: '09:00',
+      endTime: '09:30',
+    };
+  }
+
+  const end = new Date(start.getTime() + 30 * 60 * 1000);
+
+  return {
+    date: `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}`,
+    startTime: `${pad(start.getHours())}:${pad(start.getMinutes())}`,
+    endTime: `${pad(end.getHours())}:${pad(end.getMinutes())}`,
+  };
+};
+
 export const DoctorConsole: React.FC = () => {
   const { user, profile, signOut } = useAuth();
   const queryClient = useQueryClient();
@@ -131,40 +189,95 @@ export const DoctorConsole: React.FC = () => {
 
   // 5. Slot Publishing State & Queries
   const [isSlotModalOpen, setIsSlotModalOpen] = useState(false);
-  const todayStr = new Date().toISOString().split('T')[0];
-  const [slotDate, setSlotDate] = useState(todayStr);
-  const [slotStartTime, setSlotStartTime] = useState('17:00');
-  const [slotEndTime, setSlotEndTime] = useState('17:20');
+  const initialSchedule = useMemo(() => getDefaultSlotSchedule(), []);
+  const [slotDate, setSlotDate] = useState(initialSchedule.date);
+  const [slotStartTime, setSlotStartTime] = useState(initialSchedule.startTime);
+  const [slotEndTime, setSlotEndTime] = useState(initialSchedule.endTime);
   const [slotPublishError, setSlotPublishError] = useState<string | null>(null);
   const [slotPublishSuccess, setSlotPublishSuccess] = useState<string | null>(null);
+  const [slotFilter, setSlotFilter] = useState<'selected' | 'all'>('selected');
 
-  // Query today's slots
-  const startOfDayISO = `${slotDate}T00:00:00+05:30`;
-  const endOfDayISO = `${slotDate}T23:59:59+05:30`;
+  // Query upcoming slots across a multi-day window (today to +14 days)
+  const slotQueryWindow = useMemo(() => {
+    const from = new Date(Date.now() - 3600 * 1000).toISOString();
+    const to = new Date(Date.now() + 14 * 86_400_000).toISOString();
+    return { from, to };
+  }, [isSlotModalOpen]);
 
-  const { data: slotsData, refetch: refetchSlots, isLoading: isLoadingSlots } = useQuery({
-    queryKey: ['available-slots', selectedQueueId, slotDate],
-    queryFn: () => apiClient.getAvailableSlots(selectedQueueId, startOfDayISO, endOfDayISO),
+  const {
+    data: slotsData,
+    refetch: refetchSlots,
+    isLoading: isLoadingSlots,
+  } = useQuery({
+    queryKey: ['available-slots', selectedQueueId],
+    queryFn: () => apiClient.getAvailableSlots(selectedQueueId, slotQueryWindow.from, slotQueryWindow.to),
     enabled: !!selectedQueueId && isSlotModalOpen,
   });
+
+  const allUpcomingSlots = useMemo(() => {
+    const items = slotsData?.items || [];
+    return items.slice().sort(
+      (a: any, b: any) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime()
+    );
+  }, [slotsData?.items]);
+
+  const slotsForSelectedDate = useMemo(() => {
+    return allUpcomingSlots.filter((slot: any) => {
+      const d = new Date(slot.startsAt);
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}` === slotDate;
+    });
+  }, [allUpcomingSlots, slotDate]);
+
+  const displayedSlots = slotFilter === 'selected' ? slotsForSelectedDate : allUpcomingSlots;
+
+  const handleOpenSlotModal = () => {
+    const tzOffset = getIsoTimezoneOffset();
+    const existingStart = new Date(`${slotDate}T${slotStartTime}:00${tzOffset}`);
+    if (isNaN(existingStart.getTime()) || existingStart.getTime() <= Date.now()) {
+      const defaults = getDefaultSlotSchedule();
+      setSlotDate(defaults.date);
+      setSlotStartTime(defaults.startTime);
+      setSlotEndTime(defaults.endTime);
+    }
+    setSlotPublishError(null);
+    setSlotPublishSuccess(null);
+    setIsSlotModalOpen(true);
+  };
 
   const publishSlotMutation = useMutation({
     mutationFn: async () => {
       setSlotPublishError(null);
       setSlotPublishSuccess(null);
-      const startsAt = `${slotDate}T${slotStartTime}:00+05:30`;
-      const endsAt = `${slotDate}T${slotEndTime}:00+05:30`;
 
-      if (new Date(endsAt).getTime() <= new Date(startsAt).getTime()) {
-        throw new Error('End time must be after start time.');
+      const tzOffset = getIsoTimezoneOffset();
+      const startsAt = `${slotDate}T${slotStartTime}:00${tzOffset}`;
+      const endsAt = `${slotDate}T${slotEndTime}:00${tzOffset}`;
+
+      const startDate = new Date(startsAt);
+      const endDate = new Date(endsAt);
+
+      if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+        throw new Error('Please enter valid date and time values.');
+      }
+      if (startDate.getTime() <= Date.now()) {
+        throw new Error('Slot start time must be in the future. Please choose an upcoming time.');
+      }
+      if (endDate.getTime() <= startDate.getTime()) {
+        throw new Error('Slot end time must be after the start time.');
       }
 
       return apiClient.publishSlot(selectedQueueId, startsAt, endsAt);
     },
     onSuccess: () => {
       setSlotPublishSuccess('Availability slot published successfully!');
+      queryClient.invalidateQueries({ queryKey: ['available-slots'] });
+      queryClient.invalidateQueries({ queryKey: ['available-slots', selectedQueueId] });
+      queryClient.invalidateQueries({ queryKey: ['availableSlots'] });
       refetchSlots();
-      setTimeout(() => setSlotPublishSuccess(null), 4000);
+      setTimeout(() => setSlotPublishSuccess(null), 5000);
     },
     onError: (err: any) => {
       setSlotPublishError(err.message || 'Failed to publish slot.');
@@ -179,7 +292,7 @@ export const DoctorConsole: React.FC = () => {
         right={
           <div className="flex items-center gap-3">
             <button
-              onClick={() => setIsSlotModalOpen(true)}
+              onClick={handleOpenSlotModal}
               className="press flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors cursor-pointer"
             >
               <Calendar size={14} />
@@ -501,14 +614,30 @@ export const DoctorConsole: React.FC = () => {
                   </p>
 
                   {slotPublishError && (
-                    <div className="p-3 text-xs rounded-lg bg-destructive/10 text-destructive border border-destructive/20 font-medium">
-                      {slotPublishError}
+                    <div className="flex items-start gap-2.5 p-3 text-xs rounded-lg bg-destructive/10 text-destructive border border-destructive/20 font-medium">
+                      <AlertCircle size={15} className="shrink-0 mt-0.5" />
+                      <span className="flex-1">{slotPublishError}</span>
+                      <button
+                        type="button"
+                        onClick={() => setSlotPublishError(null)}
+                        className="text-destructive/70 hover:text-destructive cursor-pointer"
+                      >
+                        <X size={14} />
+                      </button>
                     </div>
                   )}
 
                   {slotPublishSuccess && (
-                    <div className="p-3 text-xs rounded-lg bg-success-soft text-success border border-success/20 font-medium">
-                      {slotPublishSuccess}
+                    <div className="flex items-start gap-2.5 p-3 text-xs rounded-lg bg-success-soft text-success border border-success/20 font-medium">
+                      <CheckCircle2 size={15} className="shrink-0 mt-0.5" />
+                      <span className="flex-1">{slotPublishSuccess}</span>
+                      <button
+                        type="button"
+                        onClick={() => setSlotPublishSuccess(null)}
+                        className="text-success/70 hover:text-success cursor-pointer"
+                      >
+                        <X size={14} />
+                      </button>
                     </div>
                   )}
 
@@ -547,52 +676,101 @@ export const DoctorConsole: React.FC = () => {
                     size="md"
                     loading={publishSlotMutation.isPending}
                     onClick={() => publishSlotMutation.mutate()}
-                    className="w-full gap-2"
+                    className="w-full gap-2 cursor-pointer"
                   >
                     <Plus size={16} /> Publish Availability Slot
                   </Btn>
 
-                  {/* List of slots for the chosen day */}
+                  {/* List of slots with multi-day toggle */}
                   <div className="mt-6 border-t border-border pt-4">
-                    <p className="text-xs font-semibold text-muted-foreground mb-2">
-                      Slots for {slotDate}
-                    </p>
-                    {isLoadingSlots ? (
-                      <p className="text-xs text-muted-foreground py-2">Loading slots...</p>
-                    ) : !slotsData?.items?.length ? (
-                      <p className="text-xs text-muted-foreground py-2 italic">
-                        No slots published for this date yet.
+                    <div className="flex items-center justify-between mb-3">
+                      <p className="text-xs font-semibold text-muted-foreground">
+                        {slotFilter === 'selected' ? `Slots for ${slotDate}` : 'Upcoming Slots (Next 14 Days)'}
+                        <span className="ml-1.5 font-normal text-muted-foreground">({displayedSlots.length})</span>
                       </p>
-                    ) : (
-                      <div className="space-y-1.5 max-h-40 overflow-y-auto">
-                        {slotsData.items.map((slot: any) => (
-                          <div
-                            key={slot.id}
-                            className="flex items-center justify-between p-2 rounded-lg bg-muted/40 text-xs font-mono"
+                      <div className="flex items-center gap-1 text-[11px]">
+                        <button
+                          type="button"
+                          onClick={() => setSlotFilter('selected')}
+                          className={cn(
+                            'px-2 py-0.5 rounded transition-colors cursor-pointer',
+                            slotFilter === 'selected'
+                              ? 'bg-primary/20 text-primary font-medium'
+                              : 'text-muted-foreground hover:text-foreground'
+                          )}
+                        >
+                          Date ({slotsForSelectedDate.length})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSlotFilter('all')}
+                          className={cn(
+                            'px-2 py-0.5 rounded transition-colors cursor-pointer',
+                            slotFilter === 'all'
+                              ? 'bg-primary/20 text-primary font-medium'
+                              : 'text-muted-foreground hover:text-foreground'
+                          )}
+                        >
+                          All 14 Days ({allUpcomingSlots.length})
+                        </button>
+                      </div>
+                    </div>
+
+                    {isLoadingSlots ? (
+                      <p className="text-xs text-muted-foreground py-3 text-center">Loading availability slots...</p>
+                    ) : displayedSlots.length === 0 ? (
+                      <div className="py-4 text-center">
+                        <p className="text-xs text-muted-foreground italic">
+                          {slotFilter === 'selected'
+                            ? `No slots published for ${slotDate}.`
+                            : 'No upcoming slots published for this queue.'}
+                        </p>
+                        {slotFilter === 'selected' && allUpcomingSlots.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setSlotFilter('all')}
+                            className="mt-1.5 text-xs text-primary hover:underline cursor-pointer"
                           >
-                            <span>
-                              {new Date(slot.startsAt).toLocaleTimeString([], {
-                                hour: '2-digit',
-                                minute: '2-digit',
-                              })}{' '}
-                              -{' '}
-                              {new Date(slot.endsAt).toLocaleTimeString([], {
-                                hour: '2-digit',
-                                minute: '2-digit',
-                              })}
-                            </span>
-                            <span
-                              className={cn(
-                                'px-2 py-0.5 rounded text-[10px] font-semibold',
-                                slot.status === 'AVAILABLE'
-                                  ? 'bg-success-soft text-success'
-                                  : 'bg-muted text-muted-foreground'
-                              )}
+                            View all {allUpcomingSlots.length} upcoming slots across next 14 days
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                        {displayedSlots.map((slot: any) => {
+                          const sDate = new Date(slot.startsAt);
+                          const eDate = new Date(slot.endsAt);
+                          const dateLabel = sDate.toLocaleDateString(undefined, {
+                            weekday: 'short',
+                            month: 'short',
+                            day: 'numeric',
+                          });
+                          const timeLabel = `${sDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${eDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+
+                          return (
+                            <div
+                              key={slot.id}
+                              className="flex items-center justify-between p-2.5 rounded-lg bg-muted/40 border border-border/50 text-xs font-mono"
                             >
-                              {slot.status || 'AVAILABLE'}
-                            </span>
-                          </div>
-                        ))}
+                              <div className="flex items-center gap-2">
+                                <span className="font-sans text-[11px] text-muted-foreground font-medium">
+                                  {dateLabel}
+                                </span>
+                                <span className="text-foreground font-semibold">{timeLabel}</span>
+                              </div>
+                              <span
+                                className={cn(
+                                  'px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider',
+                                  slot.status === 'AVAILABLE' || !slot.status
+                                    ? 'bg-success-soft text-success'
+                                    : 'bg-muted text-muted-foreground'
+                                )}
+                              >
+                                {slot.status || 'AVAILABLE'}
+                              </span>
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
                   </div>

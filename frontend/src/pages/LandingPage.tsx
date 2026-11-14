@@ -10,6 +10,7 @@ import {
   Clock,
   Search,
   ExternalLink,
+  ShieldCheck,
 } from 'lucide-react';
 import { Logo, Btn, ease, SwapText } from '../components/hq/ui';
 import { apiClient } from '../lib/api-client';
