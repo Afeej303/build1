@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import {
   BadRequestException,
   Body,
@@ -12,7 +13,7 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { IsUUID } from 'class-validator';
+import { IsString, IsUUID, MaxLength } from 'class-validator';
 import { Prisma } from '../generated/prisma/client.js';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
 import { Public } from '../common/decorators/public.decorator.js';
@@ -28,6 +29,15 @@ const waitingOrder = [
 ] satisfies Prisma.QueueTokenOrderByWithRelationInput[];
 type Token = Prisma.QueueTokenGetPayload<object>;
 type Queue = Prisma.HospitalQueueGetPayload<{ include: typeof queueContext }>;
+
+class RegisterWalkInPatient {
+  @IsUUID()
+  queueId!: string;
+
+  @IsString()
+  @MaxLength(120)
+  displayName!: string;
+}
 
 class IssueWalkIn {
   @IsUUID()
@@ -135,6 +145,79 @@ export class HospitalController {
     return { items: patients };
   }
 
+  @Post('staff/patients')
+  async registerWalkInPatient(
+    @CurrentUser('id') actor: string,
+    @Body() body: RegisterWalkInPatient,
+  ) {
+    const displayName = body.displayName.trim();
+    if (!displayName) {
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'Display name is required',
+      });
+    }
+    return this.db.$transaction(async (tx) => {
+      const queue = await tx.hospitalQueue.findFirst({
+        where: {
+          id: body.queueId,
+          department: { receptionists: { some: { userId: actor } } },
+        },
+        select: {
+          departmentId: true,
+          department: { select: { hospitalId: true } },
+        },
+      });
+      if (!queue) this.denyQueue();
+
+      const patient = await tx.patient.create({
+        data: {
+          hospitalId: queue.department.hospitalId,
+          displayName,
+          patientNumber: 'UHID-' + randomUUID(),
+        },
+        select: {
+          id: true,
+          hospitalId: true,
+          patientNumber: true,
+          displayName: true,
+        },
+      });
+      await tx.hospitalActivity.create({
+        data: {
+          departmentId: queue.departmentId,
+          actorId: actor,
+          action: 'WALK_IN_PATIENT_REGISTERED',
+        },
+      });
+      return patient;
+    });
+  }
+
+  @Get('staff/audit-log')
+  async receptionAudit(@CurrentUser('id') actor: string) {
+    const departments = await this.db.receptionAssignment.findMany({
+      where: { userId: actor },
+      select: { departmentId: true },
+    });
+    if (!departments.length) {
+      throw new ForbiddenException({
+        code: 'INSUFFICIENT_PERMISSION',
+        message: 'Reception assignment required',
+      });
+    }
+    const items = await this.db.hospitalActivity.findMany({
+      where: {
+        departmentId: {
+          in: departments.map(({ departmentId }) => departmentId),
+        },
+      },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: 100,
+    });
+    return { items };
+  }
+
   @Post('walk-ins')
   async issue(@CurrentUser('id') actor: string, @Body() body: IssueWalkIn) {
     try {
@@ -173,6 +256,14 @@ export class HospitalController {
         await tx.hospitalQueue.update({
           where: { id: queue.id },
           data: { updatedAt: new Date() },
+        });
+        await tx.hospitalActivity.create({
+          data: {
+            departmentId: queue.departmentId,
+            actorId: actor,
+            action: 'WALK_IN_ISSUED',
+            tokenId: token.id,
+          },
         });
         return {
           ...tokenView(token),
@@ -274,6 +365,13 @@ export class HospitalController {
         where: { id: queue.id },
         data: { updatedAt: new Date() },
       });
+      await this.recordTokenActivity(
+        tx,
+        queue.departmentId,
+        actor,
+        token.id,
+        'DOCTOR_CALLED_NEXT',
+      );
       return { ...tokenView(token), calledAt: token.calledAt };
     });
   }
@@ -303,6 +401,13 @@ export class HospitalController {
         where: { id: queue.id },
         data: { updatedAt: new Date() },
       });
+      await this.recordTokenActivity(
+        tx,
+        queue.departmentId,
+        actor,
+        tokenId,
+        'CONSULTATION_COMPLETED',
+      );
       return tokenView(
         await tx.queueToken.findUniqueOrThrow({ where: { id: tokenId } }),
       );
@@ -381,6 +486,28 @@ export class HospitalController {
       estimatedWaitMinutes: null,
       updatedAt: queue.updatedAt,
     };
+  }
+
+  private async recordTokenActivity(
+    tx: Prisma.TransactionClient,
+    departmentId: string,
+    actorId: string,
+    tokenId: string,
+    action: string,
+  ) {
+    const appointment = await tx.appointment.findUnique({
+      where: { queueTokenId: tokenId },
+      select: { id: true },
+    });
+    await tx.hospitalActivity.create({
+      data: {
+        departmentId,
+        actorId,
+        tokenId,
+        action,
+        appointmentId: appointment?.id,
+      },
+    });
   }
 
   private async patientView(token: Token, queue: Queue) {

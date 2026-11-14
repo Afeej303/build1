@@ -205,3 +205,18 @@ All three routes require a Supabase bearer token.
 | `POST /patients/self` | `201` with the patient record. Send `{ hospitalId, displayName }`. The server generates the UHID on first registration and returns the existing record on repeat. |
 
 Select a queue, register at its hospital if needed, then load available slots using that queue ID. Self-registration returns `404 HOSPITAL_NOT_FOUND` for an unknown hospital or `409 PATIENT_NOT_AVAILABLE` when existing linked records require reception to resolve the match.
+
+### Receptionist registration for walk-ins
+
+Send `{ queueId, displayName }` to `POST /staff/patients` when the patient has no existing record. The caller must be assigned to the selected queue's department as a receptionist. The server uses that department's hospital and returns `201` with `{ id, hospitalId, patientNumber, displayName }`. An inaccessible queue returns `403 UNAUTHORIZED_QUEUE_ACCESS`.
+
+Use the returned `id` as `patientId` in the existing `POST /walk-ins` request. Keep the returned record after registration so a failed token request can be retried without creating another patient. Each successful registration creates a new record. Use UHID lookup for returning patients. Reception registration creates an unlinked patient, so staff should provide the token slip for the public queue board.
+
+### Live integration additions
+
+- `GET /users/me/patients` includes nullable `phone`, `gender`, and `dateOfBirth` alongside `displayName` (full name). `PATCH /users/me/patients/{patientId}` updates the caller's own record and returns the profile. Send any of `displayName`, `phone`, `gender`, or `dateOfBirth`. Submit date of birth as YYYY-MM-DD. Responses serialize it at UTC midnight. Use null to clear optional fields.
+- `GET /staff/appointments?from=...&to=...` lists appointments in the receptionist's assigned departments. Each row includes `id`, `status`, `slot`, `queueTokenId`, and `patient: { id, patientNumber, displayName }`. The date range uses an inclusive start and exclusive end, up to 31 days. Use earlier ranges for history.
+- Appointment responses include `queueTokenId`, which is null until check-in. The check-in response is the queue token itself. Use its `id` with `GET /queue-tokens/{tokenId}`.
+- Booking the same slot twice returns `409 SLOT_UNAVAILABLE`. Booking overlapping slots for the same patient record returns `409 PATIENT_APPOINTMENT_OVERLAP`.
+- `GET /staff/audit-log` returns the latest 100 events across the caller's assigned reception departments. Each item has `id`, `departmentId`, `actorId`, `action`, `createdAt`, `appointmentId`, `tokenId`, and `source`. Booking sources are `ONLINE` and `RECEPTION`. Events start with this release and include appointment booking, cancellation, check-in, walk-in registration and issuance, call-next, and consultation completion. Retried check-in does not add another event.
+- Email/password auth and session refresh use Supabase Auth. Google sign-in requires enabling Google in the Supabase project and configuring the frontend callback.

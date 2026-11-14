@@ -383,6 +383,9 @@ model Patient {
   hospitalId  String       @db.Uuid
   userId      String?      @db.Uuid
   patientNumber String
+  phone String?
+  gender String?
+  dateOfBirth DateTime? @db.Date
   displayName String
   hospital    Hospital     @relation(fields: [hospitalId], references: [id])
   user        User?        @relation(fields: [userId], references: [id])
@@ -457,4 +460,18 @@ model Appointment {
   patient Patient @relation(fields: [patientId], references: [id])
 
   @@index([patientId])
+}
+
+
+model HospitalActivity {
+  id String @id @default(uuid()) @db.Uuid
+  departmentId String @db.Uuid
+  actorId String @db.Uuid
+  action String
+  appointmentId String? @db.Uuid
+  tokenId String? @db.Uuid
+  source String?
+  createdAt DateTime @default(now())
+
+  @@index([departmentId, createdAt, id])
 }

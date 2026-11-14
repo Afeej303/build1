@@ -10,6 +10,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Patch,
   Query,
 } from '@nestjs/common';
 import {
@@ -18,6 +19,7 @@ import {
   IsUUID,
   IsString,
   MaxLength,
+  Matches,
 } from 'class-validator';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
 import { Prisma } from '../generated/prisma/client.js';
@@ -51,6 +53,36 @@ class RegisterPatient {
   @MaxLength(120)
   displayName!: string;
 }
+
+class UpdatePatientProfile {
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  displayName?: string;
+
+  @IsOptional()
+  @Matches(/^\+?[0-9][0-9 ().-]{5,22}$/)
+  phone?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  gender?: string | null;
+
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  dateOfBirth?: string | null;
+}
+
+const patientProfile = {
+  id: true,
+  hospitalId: true,
+  patientNumber: true,
+  displayName: true,
+  phone: true,
+  gender: true,
+  dateOfBirth: true,
+} as const;
 
 class PublishSlot {
   @IsISO8601({ strict: true })
@@ -91,7 +123,12 @@ function slotView(
 function appointmentView(
   row: Prisma.AppointmentGetPayload<{ include: typeof appointmentDetails }>,
 ) {
-  return { id: row.id, status: row.status, slot: slotView(row.slot) };
+  return {
+    id: row.id,
+    status: row.status,
+    queueTokenId: row.queueTokenId,
+    slot: slotView(row.slot),
+  };
 }
 
 function dateRange(range: DateRange) {
@@ -162,6 +199,86 @@ export class AppointmentsController {
       orderBy: { id: 'asc' },
     });
     return { items };
+  }
+
+  @Patch('users/me/patients/:patientId')
+  async updatePatient(
+    @CurrentUser('id') userId: string,
+    @Param('patientId', ParseUUIDPipe) id: string,
+    @Body() body: UpdatePatientProfile,
+  ) {
+    const displayName = body.displayName?.trim();
+    const dob = body.dateOfBirth;
+    const dateOfBirth = dob
+      ? new Date(dob + 'T00:00:00.000Z')
+      : dob === null
+        ? null
+        : undefined;
+    if (
+      (body.displayName !== undefined && !displayName) ||
+      (dateOfBirth &&
+        (!Number.isFinite(+dateOfBirth) ||
+          dateOfBirth.toISOString().slice(0, 10) !== dob ||
+          +dateOfBirth > Date.now()))
+    ) {
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'Invalid name or date of birth',
+      });
+    }
+    const [patient] = await this.db.patient.updateManyAndReturn({
+      where: { id, userId },
+      select: patientProfile,
+      data: {
+        displayName,
+        phone: body.phone,
+        gender: body.gender?.trim() ?? body.gender,
+        dateOfBirth,
+      },
+    });
+    if (!patient)
+      throw new NotFoundException({
+        code: 'PATIENT_NOT_FOUND',
+        message: 'Patient not found',
+      });
+    return patient;
+  }
+
+  @Get('staff/appointments')
+  async receptionAppointments(
+    @CurrentUser('id') userId: string,
+    @Query() range: DateRange,
+  ) {
+    const scope = { receptionists: { some: { userId } } };
+    if (
+      !(await this.db.department.findFirst({
+        where: scope,
+        select: { id: true },
+      }))
+    ) {
+      throw new ForbiddenException({
+        code: 'INSUFFICIENT_PERMISSION',
+        message: 'Reception assignment required',
+      });
+    }
+    const rows = await this.db.appointment.findMany({
+      where: {
+        slot: { startsAt: dateRange(range), queue: { department: scope } },
+      },
+      include: {
+        ...appointmentDetails,
+        patient: {
+          select: { id: true, patientNumber: true, displayName: true },
+        },
+      },
+      orderBy: [{ slot: { startsAt: 'asc' } }, { id: 'asc' }],
+    });
+    return {
+      items: rows.map((row) => ({
+        ...appointmentView(row),
+        patient: row.patient,
+      })),
+    };
   }
 
   @Post('patients/self')
@@ -326,6 +443,19 @@ export class AppointmentsController {
           where: { id: token.queueId },
           data: { updatedAt: new Date() },
         });
+        const queue = await tx.hospitalQueue.findUniqueOrThrow({
+          where: { id: token.queueId },
+          select: { departmentId: true },
+        });
+        await tx.hospitalActivity.create({
+          data: {
+            departmentId: queue.departmentId,
+            actorId: userId,
+            action: 'APPOINTMENT_CHECKED_IN',
+            appointmentId: id,
+            tokenId: token.id,
+          },
+        });
         return tokenView(token);
       });
     } catch (error) {
@@ -404,9 +534,38 @@ export class AppointmentsController {
             message: 'A single accessible patient record is required',
           });
         }
+        const patientId = patients[0].id;
+        await tx.$queryRaw`SELECT id FROM "Patient" WHERE id = ${patientId}::uuid FOR UPDATE`;
+        if (
+          await tx.appointment.findFirst({
+            where: {
+              patientId,
+              status: { in: ['BOOKED', 'CHECKED_IN'] },
+              slotId: { not: slot.id },
+              slot: {
+                startsAt: { lt: slot.endsAt },
+                endsAt: { gt: slot.startsAt },
+              },
+            },
+          })
+        ) {
+          throw new ConflictException({
+            code: 'PATIENT_APPOINTMENT_OVERLAP',
+            message: 'Patient already has an overlapping appointment',
+          });
+        }
         const created = await tx.appointment.create({
           data: { slotId: slot.id, patientId: patients[0].id },
           include: appointmentDetails,
+        });
+        await tx.hospitalActivity.create({
+          data: {
+            departmentId: slot.queue.departmentId,
+            actorId: userId,
+            action: 'APPOINTMENT_BOOKED',
+            appointmentId: created.id,
+            source: body.patientId ? 'RECEPTION' : 'ONLINE',
+          },
         });
         return appointmentView(created);
       });
@@ -479,6 +638,15 @@ export class AppointmentsController {
           message: 'Only a future booking can be cancelled',
         });
       }
+      if (updated.count)
+        await tx.hospitalActivity.create({
+          data: {
+            departmentId: appointment.slot.queue.departmentId,
+            actorId: userId,
+            action: 'APPOINTMENT_CANCELLED',
+            appointmentId: id,
+          },
+        });
       return appointmentView(appointment);
     });
   }
