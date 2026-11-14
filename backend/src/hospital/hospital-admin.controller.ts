@@ -7,6 +7,8 @@ import {
   Get,
   ForbiddenException,
   HttpCode,
+  Header,
+  Query,
   NotFoundException,
   Param,
   ParseUUIDPipe,
@@ -79,6 +81,92 @@ export class HospitalAdminController {
         },
       },
     });
+  }
+
+  @Get('hospitals/:hospitalId/report')
+  report(
+    @CurrentUser('id') actor: string,
+    @Param('hospitalId', ParseUUIDPipe) hospitalId: string,
+    @Query('date') date: string,
+  ) {
+    return this.dailyReport(actor, hospitalId, date);
+  }
+
+  @Get('hospitals/:hospitalId/report.csv')
+  @Header('Content-Type', 'text/csv; charset=utf-8')
+  @Header('Content-Disposition', 'attachment; filename="hospital-report.csv"')
+  async exportReport(
+    @CurrentUser('id') actor: string,
+    @Param('hospitalId', ParseUUIDPipe) hospitalId: string,
+    @Query('date') date: string,
+  ) {
+    const report = await this.dailyReport(actor, hospitalId, date);
+    const lines = report.departments.map((row) =>
+      [
+        row.departmentId,
+        row.tokens,
+        row.completed,
+        row.averageWaitMinutes ?? '',
+      ].join(','),
+    );
+    return ['departmentId,tokens,completed,averageWaitMinutes', ...lines].join(
+      '\r\n',
+    );
+  }
+
+  private async dailyReport(actor: string, hospitalId: string, date: string) {
+    const start = new Date(date + 'T00:00:00+05:30');
+    if (
+      typeof date !== 'string' ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
+      !Number.isFinite(+start) ||
+      new Date(+start + 19_800_000).toISOString().slice(0, 10) !== date
+    ) {
+      throw new BadRequestException('Use a valid YYYY-MM-DD report date');
+    }
+    const hospital = await this.db.hospital.findFirst({
+      where: { id: hospitalId, ...(await this.hospitalScope(actor)) },
+      select: { id: true, departments: { select: { id: true, name: true } } },
+    });
+    if (!hospital) throw new NotFoundException('Hospital not found');
+    const tokens = await this.db.queueToken.findMany({
+      where: {
+        queue: { department: { hospitalId } },
+        issuedAt: { gte: start, lt: new Date(+start + 86_400_000) },
+      },
+      select: {
+        patientId: true,
+        status: true,
+        issuedAt: true,
+        calledAt: true,
+        queue: { select: { departmentId: true } },
+      },
+    });
+    return {
+      date,
+      uniquePatients: new Set(tokens.map((token) => token.patientId)).size,
+      departments: hospital.departments.map((department) => {
+        const rows = tokens.filter(
+          (token) => token.queue.departmentId === department.id,
+        );
+        const called = rows.flatMap((token) =>
+          token.calledAt ? [(+token.calledAt - +token.issuedAt) / 60_000] : [],
+        );
+        return {
+          departmentId: department.id,
+          departmentName: department.name,
+          tokens: rows.length,
+          completed: rows.filter((token) => token.status === 'COMPLETED')
+            .length,
+          averageWaitMinutes: called.length
+            ? Math.round(
+                called.reduce((sum, minutes) => sum + minutes, 0) /
+                  called.length,
+              )
+            : null,
+        };
+      }),
+    };
   }
 
   @Roles('super_admin')

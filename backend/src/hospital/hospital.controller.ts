@@ -13,7 +13,7 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { IsString, IsUUID, MaxLength } from 'class-validator';
+import { IsIn, IsString, IsUUID, MaxLength } from 'class-validator';
 import { Prisma } from '../generated/prisma/client.js';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
 import { Public } from '../common/decorators/public.decorator.js';
@@ -24,11 +24,26 @@ const queueContext = {
   doctor: { select: { name: true } },
 } as const;
 const waitingOrder = [
+  { priority: 'desc' },
   { issuedAt: 'asc' },
   { sequence: 'asc' },
 ] satisfies Prisma.QueueTokenOrderByWithRelationInput[];
 type Token = Prisma.QueueTokenGetPayload<object>;
 type Queue = Prisma.HospitalQueueGetPayload<{ include: typeof queueContext }>;
+
+class TransferTokenBody {
+  @IsUUID()
+  queueId!: string;
+}
+
+class QueuePriorityBody {
+  @IsIn([0, 1])
+  priority!: number;
+
+  @IsString()
+  @MaxLength(250)
+  reason!: string;
+}
 
 class RegisterWalkInPatient {
   @IsUUID()
@@ -315,7 +330,7 @@ export class HospitalController {
       activeToken: active
         ? {
             ...tokenView(active),
-            priority: 'STANDARD',
+            priority: active.priority ? 'PRIORITY' : 'STANDARD',
             calledAt: active.calledAt,
             ...(queue.doctorId === actor ? { patient: active.patient } : {}),
           }
@@ -324,7 +339,7 @@ export class HospitalController {
         .filter((token) => token.status === 'WAITING')
         .map((token) => ({
           ...tokenView(token),
-          priority: 'STANDARD',
+          priority: token.priority ? 'PRIORITY' : 'STANDARD',
         })),
       updatedAt: queue.updatedAt,
     };
@@ -373,6 +388,133 @@ export class HospitalController {
         'DOCTOR_CALLED_NEXT',
       );
       return { ...tokenView(token), calledAt: token.calledAt };
+    });
+  }
+
+  @Post('queue-tokens/:tokenId/transfer')
+  @HttpCode(200)
+  async transfer(
+    @CurrentUser('id') actor: string,
+    @Param('tokenId', ParseUUIDPipe) tokenId: string,
+    @Body() body: TransferTokenBody,
+  ) {
+    try {
+      return await this.db.$transaction(async (tx) => {
+        const existing = await tx.queueToken.findUnique({
+          where: { id: tokenId },
+          select: { queueId: true },
+        });
+        if (!existing) throw tokenMissing();
+        const ids = [...new Set([existing.queueId, body.queueId])].sort();
+        const queues = [];
+        for (const id of ids) queues.push(await this.lockQueue(tx, id));
+        const source = queues.find((queue) => queue.id === existing.queueId)!;
+        const destination = queues.find((queue) => queue.id === body.queueId)!;
+        const departmentIds = [
+          ...new Set(queues.map((queue) => queue.departmentId)),
+        ];
+        const assignments = await tx.receptionAssignment.count({
+          where: { userId: actor, departmentId: { in: departmentIds } },
+        });
+        if (
+          assignments !== departmentIds.length ||
+          source.department.hospitalId !== destination.department.hospitalId
+        ) {
+          this.denyQueue();
+        }
+        const token = await tx.queueToken.findUniqueOrThrow({
+          where: { id: tokenId },
+          include: { appointment: { select: { id: true } } },
+        });
+        if (
+          token.queueId !== source.id ||
+          token.status !== 'WAITING' ||
+          token.appointment
+        ) {
+          throw new ConflictException({
+            code: 'INVALID_STATE_TRANSITION',
+            message: 'Only waiting walk-in tokens can be transferred',
+          });
+        }
+        if (source.id === destination.id) return tokenView(token);
+        if (!destination.acceptingWalkIns) {
+          throw new ConflictException({
+            code: 'QUEUE_NOT_AVAILABLE',
+            message: 'Destination queue is closed to walk-ins',
+          });
+        }
+        const updated = await tx.queueToken.update({
+          where: { id: tokenId },
+          data: { queueId: destination.id, issuedAt: new Date() },
+        });
+        await tx.hospitalQueue.updateMany({
+          where: { id: { in: ids } },
+          data: { updatedAt: new Date() },
+        });
+        await tx.hospitalActivity.createMany({
+          data: departmentIds.map((departmentId) => ({
+            departmentId,
+            actorId: actor,
+            tokenId,
+            action: 'TOKEN_TRANSFERRED',
+          })),
+        });
+        return tokenView(updated);
+      });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new ConflictException({
+          code: 'DUPLICATE_WALK_IN',
+          message:
+            'Patient already has an active token in the destination queue',
+        });
+      }
+      throw error;
+    }
+  }
+
+  @Post('queue-tokens/:tokenId/priority')
+  @HttpCode(200)
+  async setPriority(
+    @CurrentUser('id') actor: string,
+    @Param('tokenId', ParseUUIDPipe) tokenId: string,
+    @Body() body: QueuePriorityBody,
+  ) {
+    const reason = body.reason.trim();
+    if (!reason) throw new BadRequestException('A priority reason is required');
+    return this.db.$transaction(async (tx) => {
+      const token = await tx.queueToken.findUnique({ where: { id: tokenId } });
+      if (!token) throw tokenMissing();
+      const queue = await this.lockQueue(tx, token.queueId);
+      if (queue.doctorId !== actor) this.denyQueue();
+      const result = await tx.queueToken.updateMany({
+        where: { id: tokenId, queueId: queue.id, status: 'WAITING' },
+        data: { priority: body.priority },
+      });
+      if (!result.count)
+        throw new ConflictException({
+          code: 'INVALID_STATE_TRANSITION',
+          message: 'Only waiting tokens can change priority',
+        });
+      await tx.hospitalQueue.update({
+        where: { id: queue.id },
+        data: { updatedAt: new Date() },
+      });
+      await this.recordTokenActivity(
+        tx,
+        queue.departmentId,
+        actor,
+        tokenId,
+        'TOKEN_PRIORITY_CHANGED',
+        reason,
+      );
+      return {
+        ...tokenView(token),
+        priority: body.priority ? 'PRIORITY' : 'STANDARD',
+      };
     });
   }
 
@@ -430,8 +572,11 @@ export class HospitalController {
       const queue = await this.lockQueue(tx, token.queueId);
       if (queue.doctorId !== actor) this.denyQueue();
       const changed = await tx.queueToken.updateMany({
-        where: { id: tokenId, status: 'CALLED' },
-        data: { status },
+        where: { id: tokenId, queueId: queue.id, status: 'CALLED' },
+        data: {
+          status,
+          ...(status === 'COMPLETED' ? { completedAt: new Date() } : {}),
+        },
       });
       if (!changed.count) {
         throw new ConflictException({
@@ -525,7 +670,10 @@ export class HospitalController {
       roomLabel: queue.roomLabel,
       currentDisplayNumber: active?.sequence.toString() ?? null,
       waitingCount,
-      estimatedWaitMinutes: null,
+      estimatedWaitMinutes: await this.estimateWait(
+        queue.id,
+        waitingCount + Number(Boolean(active)),
+      ),
       updatedAt: queue.updatedAt,
     };
   }
@@ -536,6 +684,7 @@ export class HospitalController {
     actorId: string,
     tokenId: string,
     action: string,
+    reason?: string,
   ) {
     const appointment = await tx.appointment.findUnique({
       where: { queueTokenId: tokenId },
@@ -548,6 +697,7 @@ export class HospitalController {
         tokenId,
         action,
         appointmentId: appointment?.id,
+        reason,
       },
     });
   }
@@ -560,10 +710,16 @@ export class HospitalController {
               queueId: queue.id,
               OR: [
                 { status: 'CALLED' },
-                { status: 'WAITING', issuedAt: { lt: token.issuedAt } },
+                { status: 'WAITING', priority: { gt: token.priority } },
+                {
+                  status: 'WAITING',
+                  priority: token.priority,
+                  issuedAt: { lt: token.issuedAt },
+                },
                 {
                   status: 'WAITING',
                   issuedAt: token.issuedAt,
+                  priority: token.priority,
                   sequence: { lt: token.sequence },
                 },
               ],
@@ -574,9 +730,33 @@ export class HospitalController {
       ...tokenView(token),
       ...queueLabels(queue),
       patientsAhead,
-      estimatedWaitMinutes: null,
+      estimatedWaitMinutes:
+        token.status === 'WAITING'
+          ? await this.estimateWait(queue.id, patientsAhead)
+          : null,
       updatedAt: queue.updatedAt,
     };
+  }
+
+  private async estimateWait(queueId: string, patientsAhead: number) {
+    const completed = await this.db.queueToken.findMany({
+      where: {
+        queueId,
+        status: 'COMPLETED',
+        calledAt: { not: null },
+        completedAt: { not: null },
+      },
+      orderBy: { completedAt: 'desc' },
+      select: { calledAt: true, completedAt: true },
+      take: 20,
+    });
+    if (!completed.length) return null;
+    const duration = completed.reduce(
+      (total, token) =>
+        total + Math.max(0, +token.completedAt! - +token.calledAt!),
+      0,
+    );
+    return Math.ceil((patientsAhead * duration) / completed.length / 60_000);
   }
 
   private staffScope(actor: string): Prisma.HospitalQueueWhereInput {

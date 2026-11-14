@@ -419,6 +419,8 @@ model HospitalQueue {
 }
 
 model QueueToken {
+  priority Int @default(0)
+  completedAt DateTime?
   id          String           @id @default(uuid()) @db.Uuid
   appointment Appointment?
   sequence    BigInt           @unique @default(autoincrement())
@@ -468,6 +470,7 @@ model Appointment {
 
 
 model HospitalActivity {
+  reason String?
   id String @id @default(uuid()) @db.Uuid
   departmentId String @db.Uuid
   actorId String @db.Uuid

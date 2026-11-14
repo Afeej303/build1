@@ -15,7 +15,11 @@ describe('Hospital queue views', () => {
           doctor: { name: 'Doctor' },
         }),
       },
-      queueToken: { findFirst: vi.fn(), count: vi.fn() },
+      queueToken: {
+        findFirst: vi.fn(),
+        count: vi.fn(),
+        findMany: vi.fn().mockResolvedValue([]),
+      },
       $transaction: vi.fn().mockResolvedValue([{ sequence: 14n }, 3]),
     };
     const controller = new HospitalController(db as unknown as PrismaService);

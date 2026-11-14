@@ -248,3 +248,17 @@ The platform `super_admin` can grant hospital access with `PUT /admin/hospitals/
 `GET /admin/hospitals` returns every hospital for platform super admins and only assigned hospitals for delegated admins. A user without either type of access receives `403`. Use the returned list to populate the hospital selector. The response includes `admins: [{ userId }]` alongside the existing departments list.
 
 Delegated admins can use the department, queue, doctor and receptionist management routes within their assigned hospitals. An out-of-scope resource returns `404`. Hospital creation, granting or revoking hospital admin access, and the global user directory require platform privileges. Staff assignment accepts an existing active app user ID.
+
+### Queue priority and wait estimates
+
+The assigned doctor can send `{ priority, reason }` to `POST /queue-tokens/{tokenId}/priority` for a waiting token. Use `1` for priority and `0` for standard. Call-next and patient position use priority first, then issue time and sequence. The audit event `TOKEN_PRIORITY_CHANGED` includes the reason, actor and timestamp. The public board does not expose the reason.
+
+Patient tracking and the public board estimate wait from the latest 20 completed consultation durations and the number ahead. The estimate is null before a completed duration is available. The public estimate is for a new arrival at the end of the queue.
+
+### Queue transfers
+
+Send `{ queueId }` to `POST /queue-tokens/{tokenId}/transfer`. Reception must be assigned to both departments, and both queues must belong to the same hospital. A waiting walk-in can move to a queue accepting walk-ins. It keeps its token ID and display number and joins the destination at the current time within its priority class. The endpoint returns the updated token with status 200. Called tokens and appointment tokens require a different workflow and return `409 INVALID_STATE_TRANSITION`. A conflicting active token in the destination returns `409 DUPLICATE_WALK_IN`. Cross-department transfers appear in both departments' audit logs.
+
+### Daily hospital reports
+
+Authorized administrators can retrieve `GET /admin/hospitals/{hospitalId}/report?date=YYYY-MM-DD` or download its department totals from `GET /admin/hospitals/{hospitalId}/report.csv?date=YYYY-MM-DD`. The report uses Asia/Kolkata calendar days. The JSON response includes the unique patient count and each department's token count, completed count, and average minutes from issuance to call. The CSV uses department IDs. The reports contain aggregate data.
