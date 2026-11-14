@@ -19,7 +19,7 @@ import { useAuth } from '../lib/auth';
 
 export const LandingPage: React.FC = () => {
   const navigate = useNavigate();
-  const { session } = useAuth();
+  const { session, signOut } = useAuth();
   const [tokenInput, setTokenInput] = useState('');
 
   // Poll live backend queue status (zero-PII, unauthenticated public view)
@@ -52,11 +52,18 @@ export const LandingPage: React.FC = () => {
               <div className="flex items-center gap-2">
                 <Link
                   to="/track"
-                  className="press inline-flex items-center gap-1.5 rounded-full bg-[#0F172A] hover:bg-slate-800 text-white px-5 py-2 text-xs font-semibold shadow-xs transition-colors"
+                  className="press inline-flex items-center gap-1.5 rounded-full bg-[#0F172A] hover:bg-slate-800 text-white px-4 py-2 text-xs font-semibold shadow-xs transition-colors"
                 >
                   <span>My Token & Appointments</span>
                   <ArrowRight size={13} />
                 </Link>
+                <button
+                  type="button"
+                  onClick={() => signOut()}
+                  className="press inline-flex items-center gap-1 rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50 px-3 py-2 text-xs font-medium transition-colors cursor-pointer"
+                >
+                  <span>Sign out</span>
+                </button>
               </div>
             ) : (
               <Link

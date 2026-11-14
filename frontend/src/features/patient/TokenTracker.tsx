@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { 
@@ -342,7 +343,7 @@ const tabs = ['Live Queue Tracker', 'Book Appointment', 'My Appointments'] as co
 type Tab = (typeof tabs)[number];
 
 function Dashboard() {
-  const { user } = useAuth();
+  const { user, profile, isDoctor, isReceptionist, isHospitalAdmin, isSuperAdmin, signOut } = useAuth();
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<Tab>('Live Queue Tracker');
 
@@ -403,6 +404,41 @@ function Dashboard() {
 
   return (
     <Page className="max-w-2xl">
+      {/* Staff Account Active Notice */}
+      {(isDoctor || isReceptionist || isHospitalAdmin || isSuperAdmin) && (
+        <div className="surface mb-6 p-4 rounded-2xl border border-blue-500/30 bg-blue-500/[0.06] flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-center gap-3">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-blue-500/15 text-blue-600 dark:text-blue-400">
+              <Stethoscope className="size-4" />
+            </span>
+            <div>
+              <p className="text-xs font-semibold text-foreground">
+                Signed in with Clinical Staff Account: {profile?.name || user?.email}
+              </p>
+              <p className="text-[11px] text-muted-foreground">
+                You are viewing the Patient Portal with your {isDoctor ? 'Doctor' : isReceptionist ? 'Receptionist' : 'Administrator'} login.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+            <Link
+              to={isDoctor ? '/consultation' : isReceptionist ? '/intake' : isSuperAdmin ? '/admin' : '/hospital-admin'}
+              className="press inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-primary text-primary-foreground text-xs font-semibold hover:opacity-90"
+            >
+              <span>Go to Workstation</span>
+              <ArrowRight size={12} />
+            </Link>
+            <button
+              type="button"
+              onClick={() => signOut()}
+              className="press px-3 py-1.5 rounded-xl border border-border bg-card hover:bg-muted text-xs font-medium text-foreground transition-colors cursor-pointer"
+            >
+              Sign Out
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Patient Welcome Header */}
       <div className="flex flex-wrap items-end justify-between gap-4 pb-4 border-b border-border">
         <div>
