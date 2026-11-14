@@ -9,8 +9,18 @@ export const ease = [0.22, 1, 0.36, 1] as const;
 export function Logo({ className }: { className?: string }) {
   return (
     <span className={cn('inline-flex items-center gap-2 font-semibold tracking-tight', className)}>
-      <span className="grid size-6 place-items-center rounded-[7px] bg-ink text-ink-foreground">
-        <svg viewBox="0 0 16 16" className="size-3.5" fill="currentColor">
+      <span
+        className="grid size-6 place-items-center rounded-[7px] bg-ink text-ink-foreground shrink-0"
+        style={{ width: 24, height: 24, minWidth: 24, minHeight: 24, display: 'inline-grid', placeItems: 'center', backgroundColor: '#0f172a', color: '#ffffff', borderRadius: 7 }}
+      >
+        <svg
+          viewBox="0 0 16 16"
+          width="14"
+          height="14"
+          className="size-3.5"
+          style={{ width: 14, height: 14, display: 'block' }}
+          fill="currentColor"
+        >
           <path d="M6.5 2h3v4.5H14v3H9.5V14h-3V9.5H2v-3h4.5z" />
         </svg>
       </span>

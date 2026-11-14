@@ -30,53 +30,80 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchProfile = async (accessToken?: string): Promise<UserProfile | null> => {
-    try {
-      if (accessToken) {
-        apiClient.setToken(accessToken);
-      }
-      const data = await apiClient.getCurrentUser();
-      setProfile(data);
-      return data;
-    } catch (err) {
-      console.warn('Failed to load profile from /users/me:', err);
-      // Resilient fallback when backend /users/me is temporarily unavailable
-      const activeUser = user || (await supabase.auth.getUser()).data.user;
-      if (activeUser) {
-        const email = activeUser.email || '';
-        const isSuper = email.includes('super') || email.includes('admin-4d17');
-        const isHospAdmin = email.includes('hospital-admin') || email.includes('admin');
-        const isDoc = email.includes('doctor');
-        const isRec = email.includes('receptionist');
+  // In-memory cache and in-flight deduplication to prevent 429 flood
+  const inFlightRef = React.useRef<Promise<UserProfile | null> | null>(null);
+  const profileCacheRef = React.useRef<Map<string, UserProfile>>(new Map());
 
-        const fallbackRoles: string[] = isSuper
-          ? ['super_admin']
-          : isHospAdmin
-          ? ['hospital_admin']
-          : isDoc
-          ? ['doctor']
-          : isRec
-          ? ['receptionist']
-          : ['patient'];
-
-        const fallbackProfile: UserProfile = {
-          id: activeUser.id,
-          email,
-          name: activeUser.user_metadata?.full_name || email.split('@')[0],
-          roles: fallbackRoles,
-          permissions: isSuper ? ['audit:read', 'hospitals:write', 'users:write'] : [],
-          staffAssignments: isDoc
-            ? [{ role: 'doctor', hospitalId: 'hosp-1', department: { id: 'dept-1', name: 'General Medicine' }, queues: [] }]
-            : isRec
-            ? [{ role: 'receptionist', hospitalId: 'hosp-1', department: { id: 'dept-1', name: 'Intake Desk' }, queues: [] }]
-            : [],
-        };
-        setProfile(fallbackProfile);
-        return fallbackProfile;
-      }
+  const fetchProfile = async (accessToken?: string, explicitUser?: User | null): Promise<UserProfile | null> => {
+    if (!accessToken) {
       setProfile(null);
       return null;
     }
+
+    // Return cached profile if already loaded for this token
+    if (profileCacheRef.current.has(accessToken)) {
+      const cached = profileCacheRef.current.get(accessToken)!;
+      setProfile(cached);
+      return cached;
+    }
+
+    // Deduplicate concurrent calls
+    if (inFlightRef.current) {
+      return inFlightRef.current;
+    }
+
+    inFlightRef.current = (async () => {
+      try {
+        apiClient.setToken(accessToken);
+        const data = await apiClient.getCurrentUser();
+        profileCacheRef.current.set(accessToken, data);
+        setProfile(data);
+        return data;
+      } catch (err) {
+        console.warn('Failed to load profile from /users/me:', err);
+        // Resilient fallback without re-querying Supabase network (prevents 429 loop)
+        const activeUser = explicitUser || user || session?.user || null;
+        if (activeUser) {
+          const email = activeUser.email || '';
+          const isSuper = email.includes('super') || email.includes('admin-4d17');
+          const isHospAdmin = email.includes('hospital-admin') || email.includes('admin');
+          const isDoc = email.includes('doctor');
+          const isRec = email.includes('receptionist');
+
+          const fallbackRoles: string[] = isSuper
+            ? ['super_admin']
+            : isHospAdmin
+            ? ['hospital_admin']
+            : isDoc
+            ? ['doctor']
+            : isRec
+            ? ['receptionist']
+            : ['patient'];
+
+          const fallbackProfile: UserProfile = {
+            id: activeUser.id,
+            email,
+            name: activeUser.user_metadata?.full_name || email.split('@')[0],
+            roles: fallbackRoles,
+            permissions: isSuper ? ['audit:read', 'hospitals:write', 'users:write'] : [],
+            staffAssignments: isDoc
+              ? [{ role: 'doctor', hospitalId: 'hosp-1', department: { id: 'dept-1', name: 'General Medicine' }, queues: [] }]
+              : isRec
+              ? [{ role: 'receptionist', hospitalId: 'hosp-1', department: { id: 'dept-1', name: 'Intake Desk' }, queues: [] }]
+              : [],
+          };
+          profileCacheRef.current.set(accessToken, fallbackProfile);
+          setProfile(fallbackProfile);
+          return fallbackProfile;
+        }
+        setProfile(null);
+        return null;
+      } finally {
+        inFlightRef.current = null;
+      }
+    })();
+
+    return inFlightRef.current;
   };
 
   useEffect(() => {
@@ -85,29 +112,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
 
-    // 1. Initial session check
-    supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
-      setSession(initialSession);
-      setUser(initialSession?.user ?? null);
-      if (initialSession?.access_token) {
-        fetchProfile(initialSession.access_token).finally(() => setLoading(false));
-      } else {
-        setLoading(false);
-      }
-    });
-
-    // 2. Auth state subscription (handles login, logout, refresh, OAuth redirects)
+    // Single source of truth: onAuthStateChange handles initial session and all updates
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (_event, currentSession) => {
       setSession(currentSession);
-      setUser(currentSession?.user ?? null);
+      const currentUser = currentSession?.user ?? null;
+      setUser(currentUser);
       if (currentSession?.access_token) {
-        apiClient.setToken(currentSession.access_token);
-        await fetchProfile(currentSession.access_token);
+        await fetchProfile(currentSession.access_token, currentUser);
       } else {
         apiClient.setToken(null);
         setProfile(null);
+        profileCacheRef.current.clear();
       }
       setLoading(false);
     });
