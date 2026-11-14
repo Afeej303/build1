@@ -2,6 +2,7 @@
 
 > Replace every `[TODO]` before implementation. Keep this document concise and specific.
 
+-mentioned project details in mvp.md
 ## 1. Project identity
 
 - **Project name:** [TODO]
