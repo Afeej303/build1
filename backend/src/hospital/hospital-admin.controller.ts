@@ -19,11 +19,11 @@ import {
   Patch,
   Post,
   Put,
-  ServiceUnavailableException,
 } from '@nestjs/common';
 import {
   IsBoolean,
   IsEmail,
+  IsEnum,
   IsIn,
   IsOptional,
   IsString,
@@ -99,7 +99,7 @@ class ProvisionStaffBody {
   @MaxLength(120)
   name!: string;
 
-  @IsString()
+  @IsIn(['doctor', 'receptionist'])
   role!: 'doctor' | 'receptionist';
 
   @IsOptional()
@@ -108,7 +108,7 @@ class ProvisionStaffBody {
 }
 
 class StaffStatusBody {
-  @IsIn(['ACTIVE', 'INACTIVE', 'SUSPENDED'])
+  @IsEnum(['ACTIVE', 'INACTIVE', 'SUSPENDED'])
   status!: 'ACTIVE' | 'INACTIVE' | 'SUSPENDED';
 }
 
@@ -204,16 +204,383 @@ export class HospitalAdminController {
     });
   }
 
-  private async dailyReport(actor: string, hospitalId: string, date: string) {
-    const start = new Date(date + 'T00:00:00+05:30');
-    if (
-      typeof date !== 'string' ||
-      !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
-      !Number.isFinite(+start) ||
-      new Date(+start + 19_800_000).toISOString().slice(0, 10) !== date
-    ) {
-      throw new BadRequestException('Use a valid YYYY-MM-DD report date');
+  // ─── A. Hospital-level activity audit log ──────────────────────────────────
+
+  @Get('hospitals/:hospitalId/activity')
+  async hospitalActivity(
+    @CurrentUser('id') actor: string,
+    @Param('hospitalId', ParseUUIDPipe) hospitalId: string,
+    @Query('date') date: string,
+  ) {
+    const { start, end } = this.parseReportDate(date);
+    const hospital = await this.db.hospital.findFirst({
+      where: { id: hospitalId, ...(await this.hospitalScope(actor)) },
+      select: { id: true, departments: { select: { id: true, name: true } } },
+    });
+    if (!hospital) throw new NotFoundException('Hospital not found');
+
+    const departmentIds = hospital.departments.map((d) => d.id);
+    const deptNameMap = new Map(
+      hospital.departments.map((d) => [d.id, d.name]),
+    );
+
+    const activities = await this.db.hospitalActivity.findMany({
+      where: {
+        departmentId: { in: departmentIds },
+        createdAt: { gte: start, lt: end },
+      },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: 500,
+    });
+
+    return {
+      items: activities.map((a) => ({
+        id: a.id,
+        departmentId: a.departmentId,
+        departmentName: deptNameMap.get(a.departmentId) ?? null,
+        actorId: a.actorId,
+        action: a.action,
+        tokenId: a.tokenId,
+        appointmentId: a.appointmentId,
+        reason: a.reason,
+        createdAt: a.createdAt,
+      })),
+    };
+  }
+
+  // ─── B. Doctor activity stats ─────────────────────────────────────────────
+
+  @Get('hospitals/:hospitalId/stats/doctors')
+  async doctorStats(
+    @CurrentUser('id') actor: string,
+    @Param('hospitalId', ParseUUIDPipe) hospitalId: string,
+    @Query('date') date: string,
+  ) {
+    const { start, end } = this.parseReportDate(date);
+    const hospital = await this.db.hospital.findFirst({
+      where: { id: hospitalId, ...(await this.hospitalScope(actor)) },
+      select: { id: true },
+    });
+    if (!hospital) throw new NotFoundException('Hospital not found');
+
+    const queues = await this.db.hospitalQueue.findMany({
+      where: {
+        department: { hospitalId },
+        doctorId: { not: null },
+      },
+      select: {
+        id: true,
+        name: true,
+        doctorId: true,
+        doctor: { select: { id: true, name: true } },
+      },
+      orderBy: [{ name: 'asc' }],
+    });
+
+    const tokens = await this.db.queueToken.findMany({
+      where: {
+        queue: { department: { hospitalId } },
+        issuedAt: { gte: start, lt: end },
+        status: { in: ['COMPLETED', 'SKIPPED', 'MISSED'] },
+      },
+      select: {
+        queueId: true,
+        status: true,
+        calledAt: true,
+        completedAt: true,
+      },
+    });
+
+    const queueMap = new Map(queues.map((q) => [q.id, q]));
+    const statsMap = new Map<
+      string,
+      {
+        doctorId: string;
+        doctorName: string;
+        queueId: string;
+        queueName: string;
+        completed: number;
+        skipped: number;
+        missed: number;
+        consultationMinutes: number[];
+      }
+    >();
+
+    for (const queue of queues) {
+      if (queue.doctorId && queue.doctor) {
+        statsMap.set(queue.id, {
+          doctorId: queue.doctorId,
+          doctorName: queue.doctor.name,
+          queueId: queue.id,
+          queueName: queue.name,
+          completed: 0,
+          skipped: 0,
+          missed: 0,
+          consultationMinutes: [],
+        });
+      }
     }
+
+    for (const token of tokens) {
+      let entry = statsMap.get(token.queueId);
+      if (!entry) {
+        const queue = queueMap.get(token.queueId);
+        if (!queue || !queue.doctorId || !queue.doctor) continue;
+        entry = {
+          doctorId: queue.doctorId,
+          doctorName: queue.doctor.name,
+          queueId: queue.id,
+          queueName: queue.name,
+          completed: 0,
+          skipped: 0,
+          missed: 0,
+          consultationMinutes: [],
+        };
+        statsMap.set(token.queueId, entry);
+      }
+
+      if (token.status === 'COMPLETED') {
+        entry.completed += 1;
+        if (token.calledAt && token.completedAt) {
+          const mins = (+token.completedAt - +token.calledAt) / 60_000;
+          if (mins >= 0) entry.consultationMinutes.push(mins);
+        }
+      } else if (token.status === 'SKIPPED') {
+        entry.skipped += 1;
+      } else if (token.status === 'MISSED') {
+        entry.missed += 1;
+      }
+    }
+
+    const items = Array.from(statsMap.values()).map((entry) => ({
+      doctorId: entry.doctorId,
+      doctorName: entry.doctorName,
+      queueId: entry.queueId,
+      queueName: entry.queueName,
+      completed: entry.completed,
+      skipped: entry.skipped,
+      missed: entry.missed,
+      avgConsultationMinutes:
+        entry.consultationMinutes.length > 0
+          ? Math.round(
+              entry.consultationMinutes.reduce((a, b) => a + b, 0) /
+                entry.consultationMinutes.length,
+            )
+          : null,
+    }));
+
+    return { items };
+  }
+
+  // ─── C. Receptionist activity stats ─────────────────────────────────────
+
+  @Get('hospitals/:hospitalId/stats/receptionists')
+  async receptionistStats(
+    @CurrentUser('id') actor: string,
+    @Param('hospitalId', ParseUUIDPipe) hospitalId: string,
+    @Query('date') date: string,
+  ) {
+    const { start, end } = this.parseReportDate(date);
+    const hospital = await this.db.hospital.findFirst({
+      where: { id: hospitalId, ...(await this.hospitalScope(actor)) },
+      select: { id: true, departments: { select: { id: true, name: true } } },
+    });
+    if (!hospital) throw new NotFoundException('Hospital not found');
+
+    const departmentIds = hospital.departments.map((d) => d.id);
+    const deptNameMap = new Map(
+      hospital.departments.map((d) => [d.id, d.name]),
+    );
+
+    const RECEPTIONIST_ACTIONS = [
+      'WALK_IN_ISSUED',
+      'APPOINTMENT_CHECKED_IN',
+      'WALK_IN_PATIENT_REGISTERED',
+    ];
+
+    const activities = await this.db.hospitalActivity.findMany({
+      where: {
+        departmentId: { in: departmentIds },
+        createdAt: { gte: start, lt: end },
+        action: { in: RECEPTIONIST_ACTIONS },
+      },
+    });
+
+    const statsMap = new Map<
+      string,
+      {
+        userId: string;
+        departmentId: string;
+        walkInsIssued: number;
+        checkins: number;
+        patientsRegistered: number;
+      }
+    >();
+
+    for (const a of activities) {
+      const key = `${a.actorId}::${a.departmentId}`;
+      let entry = statsMap.get(key);
+      if (!entry) {
+        entry = {
+          userId: a.actorId,
+          departmentId: a.departmentId,
+          walkInsIssued: 0,
+          checkins: 0,
+          patientsRegistered: 0,
+        };
+        statsMap.set(key, entry);
+      }
+      if (a.action === 'WALK_IN_ISSUED') entry.walkInsIssued += 1;
+      else if (a.action === 'APPOINTMENT_CHECKED_IN') entry.checkins += 1;
+      else if (a.action === 'WALK_IN_PATIENT_REGISTERED')
+        entry.patientsRegistered += 1;
+    }
+
+    const actorIds = [...new Set(activities.map((a) => a.actorId))];
+    const users =
+      actorIds.length > 0
+        ? await this.db.user.findMany({
+            where: { id: { in: actorIds } },
+            select: { id: true, name: true },
+          })
+        : [];
+    const userNameMap = new Map(users.map((u) => [u.id, u.name]));
+
+    const items = Array.from(statsMap.values()).map((entry) => ({
+      userId: entry.userId,
+      userName: userNameMap.get(entry.userId) ?? null,
+      departmentId: entry.departmentId,
+      departmentName: deptNameMap.get(entry.departmentId) ?? null,
+      walkInsIssued: entry.walkInsIssued,
+      checkins: entry.checkins,
+      patientsRegistered: entry.patientsRegistered,
+    }));
+
+    return { items };
+  }
+
+  // ─── D. Super Admin platform-wide stats ──────────────────────────────────
+
+  @Roles('super_admin')
+  @Get('stats')
+  async platformStats() {
+    const [
+      totalHospitals,
+      totalDepartments,
+      totalQueues,
+      totalUsers,
+      totalPatients,
+      activeSessions,
+    ] = await this.db.$transaction([
+      this.db.hospital.count(),
+      this.db.department.count(),
+      this.db.hospitalQueue.count(),
+      this.db.user.count({ where: { status: 'ACTIVE', deletedAt: null } }),
+      this.db.patient.count(),
+      this.db.session.count({
+        where: { revokedAt: null, expiresAt: { gt: new Date() } },
+      }),
+    ]);
+
+    return {
+      totalHospitals,
+      totalDepartments,
+      totalQueues,
+      totalUsers,
+      totalPatients,
+      activeSessions,
+    };
+  }
+
+  // ─── E. Appointment stats per hospital ───────────────────────────────────
+
+  @Get('hospitals/:hospitalId/stats/appointments')
+  async appointmentStats(
+    @CurrentUser('id') actor: string,
+    @Param('hospitalId', ParseUUIDPipe) hospitalId: string,
+    @Query('date') date: string,
+  ) {
+    const { start, end } = this.parseReportDate(date);
+    const hospital = await this.db.hospital.findFirst({
+      where: { id: hospitalId, ...(await this.hospitalScope(actor)) },
+      select: { id: true, departments: { select: { id: true } } },
+    });
+    if (!hospital) throw new NotFoundException('Hospital not found');
+
+    const departmentIds = hospital.departments.map((d) => d.id);
+
+    const activities = await this.db.hospitalActivity.findMany({
+      where: {
+        departmentId: { in: departmentIds },
+        createdAt: { gte: start, lt: end },
+        action: {
+          in: [
+            'APPOINTMENT_BOOKED',
+            'APPOINTMENT_CHECKED_IN',
+            'APPOINTMENT_CANCELLED',
+            'APPOINTMENT_RESCHEDULED',
+          ],
+        },
+      },
+      select: { action: true },
+    });
+
+    if (activities.length > 0) {
+      let booked = 0;
+      let checkedIn = 0;
+      let cancelled = 0;
+      let rescheduled = 0;
+      for (const a of activities) {
+        if (a.action === 'APPOINTMENT_BOOKED') booked++;
+        else if (a.action === 'APPOINTMENT_CHECKED_IN') checkedIn++;
+        else if (a.action === 'APPOINTMENT_CANCELLED') cancelled++;
+        else if (a.action === 'APPOINTMENT_RESCHEDULED') rescheduled++;
+      }
+      return { booked, checkedIn, cancelled, rescheduled };
+    }
+
+    const [booked, checkedIn, cancelled] = await this.db.$transaction([
+      this.db.appointment.count({
+        where: {
+          status: 'BOOKED',
+          slot: {
+            startsAt: { gte: start, lt: end },
+            queue: { department: { hospitalId } },
+          },
+        },
+      }),
+      this.db.appointment.count({
+        where: {
+          status: 'CHECKED_IN',
+          slot: {
+            startsAt: { gte: start, lt: end },
+            queue: { department: { hospitalId } },
+          },
+        },
+      }),
+      this.db.appointment.count({
+        where: {
+          status: 'CANCELLED',
+          slot: {
+            startsAt: { gte: start, lt: end },
+            queue: { department: { hospitalId } },
+          },
+        },
+      }),
+    ]);
+
+    return {
+      booked,
+      checkedIn,
+      cancelled,
+      rescheduled: 0,
+    };
+  }
+
+  // ─── Existing hospital management endpoints ───────────────────────────────
+
+  private async dailyReport(actor: string, hospitalId: string, date: string) {
+    const { start, end } = this.parseReportDate(date);
     const hospital = await this.db.hospital.findFirst({
       where: { id: hospitalId, ...(await this.hospitalScope(actor)) },
       select: { id: true, departments: { select: { id: true, name: true } } },
@@ -222,7 +589,7 @@ export class HospitalAdminController {
     const tokens = await this.db.queueToken.findMany({
       where: {
         queue: { department: { hospitalId } },
-        issuedAt: { gte: start, lt: new Date(+start + 86_400_000) },
+        issuedAt: { gte: start, lt: end },
       },
       select: {
         patientId: true,
@@ -338,7 +705,6 @@ export class HospitalAdminController {
     @Param('departmentId', ParseUUIDPipe) departmentId: string,
     @Param('userId', ParseUUIDPipe) userId: string,
   ) {
-    // Validate department belongs to actor's hospital
     const hospital = await this.hospitalScope(actor);
     if (
       !(await this.db.department.findFirst({
@@ -348,7 +714,6 @@ export class HospitalAdminController {
     ) {
       throw new NotFoundException('Department not found');
     }
-    // Enforce per-department receptionist limit
     const currentCount = await this.db.receptionAssignment.count({
       where: { departmentId },
     });
@@ -484,7 +849,7 @@ export class HospitalAdminController {
     });
   }
 
-  // ─── A. Hospital Admin Provisioning ──────────────────────────────────────────
+  // ─── Staff Provisioning Endpoints ─────────────────────────────────────────
 
   @Roles('super_admin')
   @Post('hospitals/:hospitalId/provision-admin')
@@ -501,31 +866,18 @@ export class HospitalAdminController {
       throw new NotFoundException('Hospital not found');
     }
 
-    const email = body.email.trim().toLowerCase();
-    const name = body.name.trim() || email.split('@')[0];
-    const { supabaseUid } = await this.createSupabaseUser(email);
+    const { supabaseUid, email } = await this.createSupabaseUser(
+      body.email.trim().toLowerCase(),
+    );
 
-    const supabaseUrl =
-      this.config?.get<string>('SUPABASE_URL') ||
-      process.env.SUPABASE_URL ||
-      'https://jxxfiligudvxqtzkzvzk.supabase.co';
-    const origin = new URL(supabaseUrl).origin;
-    const supabaseIdentity = `${origin}/auth/v1|${supabaseUid.toLowerCase()}`;
+    const name = body.name.trim() || email.split('@')[0];
+    const supabaseUrl = this.config?.getOrThrow<string>('SUPABASE_URL') ?? '';
+    const supabaseIdentity = `${new URL(supabaseUrl).origin}/auth/v1|${supabaseUid.toLowerCase()}`;
 
     const user = await this.db.user.upsert({
-      where: { email },
-      create: {
-        email,
-        name,
-        supabaseIdentity,
-        emailVerifiedAt: new Date(),
-        status: 'ACTIVE',
-      },
-      update: {
-        supabaseIdentity,
-        name,
-        emailVerifiedAt: new Date(),
-      },
+      where: { supabaseIdentity },
+      create: { supabaseIdentity, email, name },
+      update: { email, name },
     });
 
     await this.assignGlobalRole(user.id, 'hospital_admin');
@@ -545,27 +897,39 @@ export class HospitalAdminController {
     };
   }
 
-  // ─── B. Staff Provisioning ────────────────────────────────────────────────────
-
   @Post('hospitals/:hospitalId/staff')
   async provisionStaff(
     @CurrentUser('id') actor: string,
     @Param('hospitalId', ParseUUIDPipe) hospitalId: string,
     @Body() body: ProvisionStaffBody,
   ) {
-    const hospital = await this.hospitalScope(actor);
-    const h = await this.db.hospital.findFirst({
-      where: { id: hospitalId, ...hospital },
-      select: { id: true },
-    });
-    if (!h) {
+    const scope = await this.hospitalScope(actor);
+    if (
+      !(await this.db.hospital.findFirst({
+        where: { id: hospitalId, ...scope },
+        select: { id: true },
+      }))
+    ) {
       throw new NotFoundException('Hospital not found');
     }
 
-    assertAssignableRole(body.role);
-    if (body.role !== 'doctor' && body.role !== 'receptionist') {
-      throw new BadRequestException('Role must be doctor or receptionist');
-    }
+    this.assertAssignableRole(body.role);
+
+    const { supabaseUid, email } = await this.createSupabaseUser(
+      body.email.trim().toLowerCase(),
+    );
+
+    const name = body.name.trim() || email.split('@')[0];
+    const supabaseUrl = this.config?.getOrThrow<string>('SUPABASE_URL') ?? '';
+    const supabaseIdentity = `${new URL(supabaseUrl).origin}/auth/v1|${supabaseUid.toLowerCase()}`;
+
+    const user = await this.db.user.upsert({
+      where: { supabaseIdentity },
+      create: { supabaseIdentity, email, name },
+      update: { email, name },
+    });
+
+    await this.assignGlobalRole(user.id, body.role);
 
     let assignedDepartmentId: string | undefined;
     if (body.role === 'receptionist' && body.departmentId) {
@@ -573,88 +937,31 @@ export class HospitalAdminController {
         where: { id: body.departmentId, hospitalId },
         select: { id: true },
       });
-      if (!dept) {
+      if (!dept)
         throw new NotFoundException('Department not found in this hospital');
-      }
 
-      const count = await this.db.receptionAssignment.count({
-        where: { departmentId: body.departmentId },
-      });
-      if (count >= MAX_RECEPTIONISTS_PER_DEPARTMENT) {
-        throw new ConflictException({
-          code: 'RECEPTIONIST_LIMIT_REACHED',
-          message: 'Department receptionist limit reached',
-        });
-      }
-      assignedDepartmentId = body.departmentId;
-    }
-
-    const email = body.email.trim().toLowerCase();
-    const name = body.name.trim() || email.split('@')[0];
-    const { supabaseUid } = await this.createSupabaseUser(email);
-
-    const supabaseUrl =
-      this.config?.get<string>('SUPABASE_URL') ||
-      process.env.SUPABASE_URL ||
-      'https://jxxfiligudvxqtzkzvzk.supabase.co';
-    const origin = new URL(supabaseUrl).origin;
-    const supabaseIdentity = `${origin}/auth/v1|${supabaseUid.toLowerCase()}`;
-
-    const user = await this.db.user.upsert({
-      where: { email },
-      create: {
-        email,
-        name,
-        supabaseIdentity,
-        emailVerifiedAt: new Date(),
-        status: 'ACTIVE',
-      },
-      update: {
-        supabaseIdentity,
-        name,
-        emailVerifiedAt: new Date(),
-      },
-    });
-
-    await this.assignGlobalRole(user.id, body.role);
-
-    if (body.role === 'receptionist' && assignedDepartmentId) {
       await this.db.receptionAssignment.upsert({
         where: {
           userId_departmentId: {
             userId: user.id,
-            departmentId: assignedDepartmentId,
+            departmentId: body.departmentId,
           },
         },
-        create: {
-          userId: user.id,
-          departmentId: assignedDepartmentId,
-        },
+        create: { userId: user.id, departmentId: body.departmentId },
         update: {},
       });
+      assignedDepartmentId = body.departmentId;
     }
 
-    const result: {
-      userId: string;
-      email: string;
-      name: string;
-      role: 'doctor' | 'receptionist';
-      hospitalId: string;
-      departmentId?: string;
-    } = {
+    return {
       userId: user.id,
       email: user.email,
       name: user.name,
       role: body.role,
       hospitalId,
+      ...(assignedDepartmentId ? { departmentId: assignedDepartmentId } : {}),
     };
-    if (assignedDepartmentId) {
-      result.departmentId = assignedDepartmentId;
-    }
-    return result;
   }
-
-  // ─── C. Staff Deactivation ────────────────────────────────────────────────────
 
   @Patch('hospitals/:hospitalId/staff/:userId/status')
   async updateStaffStatus(
@@ -663,46 +970,49 @@ export class HospitalAdminController {
     @Param('userId', ParseUUIDPipe) userId: string,
     @Body() body: StaffStatusBody,
   ) {
-    const hospital = await this.hospitalScope(actor);
-    const h = await this.db.hospital.findFirst({
-      where: { id: hospitalId, ...hospital },
-      select: { id: true },
-    });
-    if (!h) {
+    const scope = await this.hospitalScope(actor);
+    if (
+      !(await this.db.hospital.findFirst({
+        where: { id: hospitalId, ...scope },
+        select: { id: true },
+      }))
+    ) {
       throw new NotFoundException('Hospital not found');
     }
 
-    const isStaff = await this.isUserHospitalStaff(userId, hospitalId);
-    if (!isStaff) {
+    const isHospitalStaff = await this.isUserHospitalStaff(userId, hospitalId);
+    if (!isHospitalStaff) {
       throw new ForbiddenException('User is not staff of this hospital');
     }
 
-    return this.db.user.update({
+    const updated = await this.db.user.update({
       where: { id: userId },
       data: { status: body.status },
       select: { id: true, email: true, name: true, status: true },
     });
-  }
 
-  // ─── D. List Hospital Staff ───────────────────────────────────────────────────
+    return updated;
+  }
 
   @Get('hospitals/:hospitalId/staff')
   async listHospitalStaff(
     @CurrentUser('id') actor: string,
     @Param('hospitalId', ParseUUIDPipe) hospitalId: string,
   ) {
-    const hospital = await this.hospitalScope(actor);
-    const h = await this.db.hospital.findFirst({
-      where: { id: hospitalId, ...hospital },
-      select: { id: true },
-    });
-    if (!h) {
+    const scope = await this.hospitalScope(actor);
+    if (
+      !(await this.db.hospital.findFirst({
+        where: { id: hospitalId, ...scope },
+        select: { id: true },
+      }))
+    ) {
       throw new NotFoundException('Hospital not found');
     }
 
     const doctorQueues = await this.db.hospitalQueue.findMany({
       where: { doctorId: { not: null }, department: { hospitalId } },
-      include: {
+      select: {
+        doctorId: true,
         doctor: {
           select: {
             id: true,
@@ -714,13 +1024,14 @@ export class HospitalAdminController {
             },
           },
         },
-        department: { select: { id: true, name: true } },
       },
     });
 
     const receptionists = await this.db.receptionAssignment.findMany({
       where: { department: { hospitalId } },
-      include: {
+      select: {
+        departmentId: true,
+        department: { select: { id: true, name: true } },
         user: {
           select: {
             id: true,
@@ -732,13 +1043,12 @@ export class HospitalAdminController {
             },
           },
         },
-        department: { select: { id: true, name: true } },
       },
     });
 
-    const admins = await this.db.hospitalAdminAssignment.findMany({
+    const adminAssignments = await this.db.hospitalAdminAssignment.findMany({
       where: { hospitalId },
-      include: {
+      select: {
         user: {
           select: {
             id: true,
@@ -761,111 +1071,90 @@ export class HospitalAdminController {
         email: string;
         status: string;
         role: string;
-        departmentAssignments: Array<{ departmentId: string; name: string }>;
+        departmentAssignments: { departmentId: string; name: string }[];
       }
     >();
 
-    const getPrimaryRole = (
-      userRoles: Array<{ role: { slug: string } }>,
-      fallback: string,
+    const addOrMerge = (
+      u: {
+        id: string;
+        name: string;
+        email: string;
+        status: string;
+        userRoles: { role: { slug: string } }[];
+      },
+      role: string,
+      dept?: { id: string; name: string },
     ) => {
-      const slugs = userRoles?.map((r) => r.role.slug) || [];
-      if (slugs.includes('hospital_admin')) return 'hospital_admin';
-      if (slugs.includes('doctor')) return 'doctor';
-      if (slugs.includes('receptionist')) return 'receptionist';
-      return slugs[0] ?? fallback;
+      if (!staffMap.has(u.id)) {
+        staffMap.set(u.id, {
+          id: u.id,
+          name: u.name,
+          email: u.email,
+          status: u.status,
+          role: u.userRoles[0]?.role?.slug ?? role,
+          departmentAssignments: dept
+            ? [{ departmentId: dept.id, name: dept.name }]
+            : [],
+        });
+      } else if (dept) {
+        staffMap
+          .get(u.id)!
+          .departmentAssignments.push({
+            departmentId: dept.id,
+            name: dept.name,
+          });
+      }
     };
 
-    for (const r of receptionists) {
-      if (!r.user) continue;
-      let entry = staffMap.get(r.user.id);
-      if (!entry) {
-        entry = {
-          id: r.user.id,
-          name: r.user.name,
-          email: r.user.email,
-          status: r.user.status,
-          role: getPrimaryRole(r.user.userRoles, 'receptionist'),
-          departmentAssignments: [],
-        };
-        staffMap.set(r.user.id, entry);
-      }
-      if (
-        !entry.departmentAssignments.some(
-          (d) => d.departmentId === r.department.id,
-        )
-      ) {
-        entry.departmentAssignments.push({
-          departmentId: r.department.id,
-          name: r.department.name,
-        });
-      }
-    }
-
     for (const q of doctorQueues) {
-      if (!q.doctor) continue;
-      let entry = staffMap.get(q.doctor.id);
-      if (!entry) {
-        entry = {
-          id: q.doctor.id,
-          name: q.doctor.name,
-          email: q.doctor.email,
-          status: q.doctor.status,
-          role: getPrimaryRole(q.doctor.userRoles, 'doctor'),
-          departmentAssignments: [],
-        };
-        staffMap.set(q.doctor.id, entry);
-      }
-      if (
-        !entry.departmentAssignments.some(
-          (d) => d.departmentId === q.department.id,
-        )
-      ) {
-        entry.departmentAssignments.push({
-          departmentId: q.department.id,
-          name: q.department.name,
-        });
-      }
+      if (q.doctor) addOrMerge(q.doctor, 'doctor');
     }
-
-    for (const a of admins) {
-      if (!a.user) continue;
-      let entry = staffMap.get(a.user.id);
-      if (!entry) {
-        entry = {
-          id: a.user.id,
-          name: a.user.name,
-          email: a.user.email,
-          status: a.user.status,
-          role: getPrimaryRole(a.user.userRoles, 'hospital_admin'),
-          departmentAssignments: [],
-        };
-        staffMap.set(a.user.id, entry);
-      }
+    for (const r of receptionists) {
+      addOrMerge(r.user, 'receptionist', {
+        id: r.department.id,
+        name: r.department.name,
+      });
+    }
+    for (const a of adminAssignments) {
+      addOrMerge(a.user, 'hospital_admin');
     }
 
     return Array.from(staffMap.values());
   }
 
-  // ─── Helpers ──────────────────────────────────────────────────────────────────
+  // ─── Helpers ──────────────────────────────────────────────────────────────
+
+  private parseReportDate(date: string): { start: Date; end: Date } {
+    const start = new Date(date + 'T00:00:00+05:30');
+    if (
+      typeof date !== 'string' ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
+      !Number.isFinite(+start) ||
+      new Date(+start + 19_800_000).toISOString().slice(0, 10) !== date
+    ) {
+      throw new BadRequestException('Use a valid YYYY-MM-DD report date');
+    }
+    return { start, end: new Date(+start + 86_400_000) };
+  }
 
   private async createSupabaseUser(
     email: string,
   ): Promise<{ supabaseUid: string; email: string }> {
+    if (!this.config) {
+      throw new ConflictException('ConfigService not available');
+    }
     const supabaseUrl =
-      this.config?.get<string>('SUPABASE_URL') ||
+      this.config.get<string>('SUPABASE_URL') ||
       process.env.SUPABASE_URL ||
       'https://jxxfiligudvxqtzkzvzk.supabase.co';
     const serviceRoleKey =
-      this.config?.get<string>('SUPABASE_SERVICE_ROLE_KEY') ||
-      this.config?.get<string>('SUPABASE_SECRET_KEY') ||
-      process.env.SUPABASE_SERVICE_ROLE_KEY ||
-      process.env.SUPABASE_SECRET_KEY;
-
+      this.config.get<string>('SUPABASE_SECRET_KEY') ||
+      this.config.get<string>('SUPABASE_SERVICE_ROLE_KEY') ||
+      process.env.SUPABASE_SECRET_KEY ||
+      process.env.SUPABASE_SERVICE_ROLE_KEY;
     if (!serviceRoleKey) {
-      throw new ServiceUnavailableException(
-        'Supabase service role key is not configured',
-      );
+      throw new ConflictException('Supabase service role key not configured');
     }
 
     const response = await fetch(
@@ -886,49 +1175,28 @@ export class HospitalAdminController {
       },
     );
 
-    if (
-      response.status === 422 ||
-      response.status === 409 ||
-      response.status === 400
-    ) {
-      const errorBody = (await response.json().catch(() => ({}))) as Record<
-        string,
-        unknown
-      >;
-      const msg = (
-        errorBody?.msg ||
-        errorBody?.message ||
-        errorBody?.error_description ||
-        ''
-      )
-        .toString()
-        .toLowerCase();
+    if (response.status === 422) {
+      const body = (await response.json()) as { message?: string };
       if (
-        msg.includes('already') ||
-        msg.includes('registered') ||
-        msg.includes('exists') ||
-        msg.includes('email')
+        body?.message?.toLowerCase().includes('already been registered') ||
+        body?.message?.toLowerCase().includes('already exists') ||
+        body?.message?.toLowerCase().includes('email address')
       ) {
         throw new ConflictException({
-          code: 'EMAIL_ALREADY_REGISTERED',
           message: 'Email is already registered',
+          code: 'EMAIL_ALREADY_REGISTERED',
         });
       }
-      throw new BadRequestException(
-        (errorBody?.msg as string) ||
-          (errorBody?.message as string) ||
-          `Failed to create user in Supabase (status ${response.status})`,
-      );
     }
 
     if (!response.ok) {
       const errText = await response.text().catch(() => '');
-      throw new BadRequestException(
-        `Failed to create user in Supabase: ${response.status} ${errText}`,
+      throw new ConflictException(
+        `Supabase user creation failed: ${response.status} ${errText}`,
       );
     }
 
-    const data = (await response.json()) as { id: string; email?: string };
+    const data = (await response.json()) as { id: string; email: string };
     return { supabaseUid: data.id, email: data.email ?? email };
   }
 
