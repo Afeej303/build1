@@ -240,3 +240,11 @@ These endpoints require a bearer token for a user with the global `super_admin` 
 | `DELETE /admin/departments/{departmentId}/receptionists/{userId}` | None | 204, including when the assignment was already absent |
 
 Assign existing active accounts by their app user ID. Users without the global super-admin role receive 403.
+
+### Delegated hospital administrators
+
+The platform `super_admin` can grant hospital access with `PUT /admin/hospitals/{hospitalId}/admins/{userId}` and revoke it with `DELETE` on the same path. The grant returns `200` with `{ hospitalId, userId }`. Revocation returns `204`. Use the active signed-in user's application ID from `GET /users/me`.
+
+`GET /admin/hospitals` returns every hospital for platform super admins and only assigned hospitals for delegated admins. A user without either type of access receives `403`. Use the returned list to populate the hospital selector. The response includes `admins: [{ userId }]` alongside the existing departments list.
+
+Delegated admins can use the department, queue, doctor and receptionist management routes within their assigned hospitals. An out-of-scope resource returns `404`. Hospital creation, granting or revoking hospital admin access, and the global user directory require platform privileges. Staff assignment accepts an existing active app user ID.
