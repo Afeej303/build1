@@ -15,7 +15,7 @@ All paths, fields, and queue state names below are proposals except `GET /users/
 
 | ID | Proposed interface | Access | Success |
 |---|---|---|---|
-| API-001 | `GET /users/me` | Signed-in user | 200 app profile with global roles and permissions |
+| API-001 | `GET /users/me` | Signed-in user | 200 app profile with global roles, permissions, and staff assignments |
 | API-002 | `POST /walk-ins` | Receptionist authorized for the queue | 201 token for an existing patient |
 | API-003 | `POST /queues/{queueId}/call-next` | Doctor assigned to the queue | 200 called token, or 409 if there is no eligible token or a consultation is already active |
 | API-004 | `POST /queue-tokens/{tokenId}/complete` | Doctor responsible for the active token | 200 completed token, or 409 if the transition is no longer valid |
@@ -24,13 +24,13 @@ All paths, fields, and queue state names below are proposals except `GET /users/
 
 ### API-001 · Current user
 
-Response excerpt from the starter:
+Proposed response excerpt, extending the starter profile:
 
 ```json
-{"id":"<app user ID>","email":"patient@example.com","name":"Patient","roles":[],"permissions":[]}
+{"id":"<app user ID>","email":"patient@example.com","name":"Patient","roles":[],"permissions":[],"staffAssignments":[]}
 ```
 
-The profile ID is the app user ID. Patient records use a separate patient ID. The starter returns global roles and permissions. How the UI discovers hospital-scoped staff assignments is TBD.
+The profile ID is the app user ID. Patient records use a separate patient ID. Global roles and permissions describe platform access. The proposed `staffAssignments` array contains entries with `role`, `hospitalId`, `department: { id, name }` or null, and `queues: [{ id, name, doctorName, roomLabel }]`. Doctor and room labels are nullable. Each entry represents one authorized scope. A hospital-wide assignment can have a null department. The UI supports multiple entries and uses the staff queue endpoint for current availability.
 
 ### API-002 · Issue a walk-in token
 
@@ -43,19 +43,19 @@ Request:
 Response:
 
 ```json
-{"id":"<token ID>","queueId":"<queue ID>","displayNumber":"A-014","status":"WAITING"}
+{"id":"<token ID>","queueId":"<queue ID>","displayNumber":"A-014","status":"WAITING","issuedAt":"2026-11-14T05:30:00Z"}
 ```
 
 The server validates the patient record and staff access to the selected queue and generates the display number. Start with a pre-existing patient record for this slice. Guest registration, dependent relationships, duplicate check-in behavior, and how reception looks up patient IDs need agreement.
 
 ### API-003 and API-004 · Call and complete
 
-Both requests have no body. Each returns the API-002 token shape with the updated status. Proposed sequence is `WAITING → CALLED → COMPLETED`. For this slice, `CALLED` represents the active token. Claim the next eligible token atomically so competing requests cannot call two tokens for the same queue. Apply the completion only to the current assigned token. Repeated completion returns 409 under this proposal. Priority ordering and tie-breaking are TBD.
+Both requests have no body. Each returns the core API-002 token fields with updated status, excluding the slip. The call response includes `calledAt` as an ISO timestamp. Proposed sequence is `WAITING → CALLED → COMPLETED`. For this slice, `CALLED` represents the active token. Claim the next eligible token atomically so competing requests cannot call two tokens for the same queue. Apply the completion only to the current assigned token. Repeated completion returns 409 under this proposal. Priority ordering and tie-breaking are TBD.
 
 ### API-005 · Patient token status
 
 ```json
-{"id":"<token ID>","queueId":"<queue ID>","displayNumber":"A-014","status":"WAITING","patientsAhead":2,"estimatedWaitMinutes":null}
+{"id":"<token ID>","queueId":"<queue ID>","displayNumber":"A-014","status":"WAITING","departmentName":"General Medicine","doctorName":"Dr. Rao","roomLabel":"Room 2","patientsAhead":2,"estimatedWaitMinutes":null,"updatedAt":"2026-11-14T05:30:00Z"}
 ```
 
 Derive the patient identity from the authenticated account. Another patient cannot retrieve the token. `estimatedWaitMinutes` is nullable until an estimate is available.
@@ -63,19 +63,19 @@ Derive the patient identity from the authenticated account. Another patient cann
 ### API-006 · Public queue status
 
 ```json
-{"publicQueueId":"<public queue ID>","currentDisplayNumber":"A-014","waitingCount":3,"estimatedWaitMinutes":null,"updatedAt":"2026-11-14T05:30:00Z"}
+{"publicQueueId":"<public queue ID>","departmentName":"General Medicine","roomLabel":"Room 2","currentDisplayNumber":"A-014","waitingCount":3,"estimatedWaitMinutes":null,"updatedAt":"2026-11-14T05:30:00Z"}
 ```
 
-The public response includes an aggregate waiting count and the current display number. It excludes patient names, contact details, patient identifiers, internal token IDs, and priority reasons. The current display number is nullable when idle. Refresh transport and cadence are TBD.
+The public response includes an aggregate waiting count and the current display number. It excludes patient names, contact details, patient identifiers, internal token IDs, and priority reasons. The current display number is nullable when idle. Doctor and room labels are nullable where unavailable. See Refresh behavior for the initial transport and cadence.
 
 ## Decisions to close
 
 | Question | Owner |
 |---|---|
-| How should the UI discover staff scope and navigate after sign-in? | M1 + M2 |
+| Confirm staff assignment scopes and the frontend public QR route. | M1 + M2 |
 | Which patient lookup and registration screens are required for the first integration? | M1 + M2 |
 | How do priority, tie-breaking, duplicate check-in, and repeat transitions work? | M2 + team |
-| What refresh mechanism and wait estimate should the two tracking screens use? | M1 + M2 |
+| Confirm polling defaults and define how wait estimates are calculated. | M1 + M2 |
 | Which enhancement interfaces need contracts in this slice? | M3 + M2 |
 | What triggers rescheduling and when is patient confirmation required? | M1 + M2 |
 
@@ -87,10 +87,9 @@ The following proposals extend the first slice. IDs are opaque strings. All list
 
 | Interface | Access and response item |
 |---|---|
-| `GET /staff/assignments` | Signed-in staff. Return assignments with `role`, `hospital: { id, name }`, and `department: { id, name }` when department-scoped. M1 can use this to select a dashboard and scope. |
-| `GET /staff/queues?departmentId=...` | Signed-in staff. Return accessible queues with `id`, `name`, `department: { id, name }`, `doctor: { id, name }` or null, `roomLabel` or null, and `acceptingWalkIns`. Doctors see assigned queues. Receptionists see queues within their authorized scope. The department filter is optional. |
-| `GET /staff/patients/lookup?patientNumber=...` | Authorized receptionist. Exact patient-number lookup returns `items` containing at most one `{ id, patientNumber, displayName }` within staff scope. The returned `id` is the `patientId` for check-in. Name and phone search remain TBD. |
-| `GET /queues/{queueId}/dashboard` | Assigned doctor or authorized receptionist. Return `{ activeToken, waitingTokens, updatedAt }`. `activeToken` is null when idle. The ordered waiting list uses the token shape from API-002. The active token also includes `patient: { id, displayName }` for the authorized care team. |
+| `GET /staff/queues?departmentId=...` | Signed-in staff. Return accessible queues with `id`, `name`, `department: { id, name }`, `doctor: { id, name }` or null, `roomLabel` or null, and `acceptingWalkIns` (boolean availability for walk-ins). Doctors see assigned queues. Receptionists see queues within their authorized scope. The department filter is optional. |
+| `GET /staff/patients/lookup?patientNumber=...` | Authorized receptionist. Exact UHID lookup using the `patientNumber` query parameter returns `items` containing at most one `{ id, patientNumber, displayName }` within staff scope. The returned `id` is the `patientId` for check-in. Confirm the match using UHID and name. Name and phone search remain TBD. |
+| `GET /queues/{queueId}/dashboard` | Assigned doctor or authorized receptionist. Return `{ activeToken, waitingTokens, updatedAt }`. `activeToken` is null when idle. Both views include core token fields and a staff-only `priority` label. Array order is the waiting order. Priority labels and ordering rules remain TBD. The active token includes `calledAt`. For the assigned doctor it also includes `patient: { id, patientNumber, displayName }`. The waiting list omits patient identification. |
 | `GET /users/me/queue-tokens?status=active` | Patient. Return only their `WAITING` and `CALLED` tokens using the API-005 shape, so the UI can restore tracking after refresh. |
 
 ### Token slip and QR
@@ -101,8 +100,7 @@ Extend API-002's success response with `slip`:
 {
   "departmentName": "General Medicine",
   "roomLabel": "Room 2",
-  "publicQueueId": "general-medicine-2",
-  "issuedAt": "2026-11-14T05:30:00Z"
+  "publicQueueId": "general-medicine-2"
 }
 ```
 
@@ -125,11 +123,11 @@ Queue mutations must check authorization before returning workflow conflicts. Du
 
 ### Refresh behavior
 
-Start with configurable polling at 5 seconds for staff and public views and 10 seconds for signed-in patient tracking. Refresh affected queries immediately after successful mutations and after a queue conflict. Pause polling on hidden tabs and refresh when visible again. Stop polling an individual token once terminal. Prevent overlapping requests and back off after repeated failures.
+Start with configurable polling at 5 seconds for staff and public views and 10 seconds for signed-in patient tracking. Refresh affected queries immediately after successful mutations and after a queue conflict. Pause polling on hidden tabs. Refresh on window focus, when the tab becomes visible again, and when connectivity returns. Stop polling an individual token once terminal. Prevent overlapping requests and back off after repeated failures. Keep the last successful view visible with a stale or offline indicator during interruptions. Realtime notifications can be added later using the same HTTP views.
 
 ### Acceptance checks for M1 and M2
 
-- A receptionist can discover a queue and find a seeded patient by patient number, issue a token, and render a slip.
+- A receptionist can discover a queue and find a seeded patient by UHID, issue a token, and render a slip.
 - Reloading the doctor's dashboard restores the active token and waiting list. A doctor outside the assignment is denied.
 - Competing call-next requests leave a single active token and the other request receives a conflict code.
 - A patient can restore their active token after reload. Another patient receives a 404 for that token.
