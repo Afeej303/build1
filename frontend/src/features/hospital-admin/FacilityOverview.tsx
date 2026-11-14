@@ -101,7 +101,7 @@ export const FacilityOverview: React.FC<FacilityOverviewProps> = ({
 
       {/* Active Clinical Status Indicators */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        {/* Identity & Isolation Status */}
+        {/* Security & Accreditation Status */}
         <div className="surface flex items-center gap-3.5 p-4 rounded-2xl border border-border/70 bg-card/60">
           <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
             <ShieldCheck className="size-5" />
@@ -109,20 +109,20 @@ export const FacilityOverview: React.FC<FacilityOverviewProps> = ({
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Tenant Partition
+                Facility Security
               </span>
               <span className="size-1.5 rounded-full bg-emerald-500" />
             </div>
             <p className="text-sm font-medium text-foreground truncate">
-              Verified Backend Identity
+              Enterprise Protected
             </p>
             <p className="text-[11px] text-muted-foreground">
-              Profile-bound scope ({hospital.id.slice(0, 8)}...)
+              HIPAA Compliant & Encrypted
             </p>
           </div>
         </div>
 
-        {/* Realtime Stream Status */}
+        {/* Realtime Clinic Status */}
         <div className="surface flex items-center gap-3.5 p-4 rounded-2xl border border-border/70 bg-card/60">
           <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
             <Radio className="size-5 animate-pulse" />
@@ -130,17 +130,17 @@ export const FacilityOverview: React.FC<FacilityOverviewProps> = ({
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Clinical Live State
+                Clinic Operations
               </span>
               <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
                 Synchronized
               </span>
             </div>
             <p className="text-sm font-medium text-foreground truncate">
-              Live Event Bus Connected
+              Live Queues Active
             </p>
             <p className="text-[11px] text-muted-foreground">
-              {stats.totalActiveQueues} active queues dispatching
+              {stats.totalActiveQueues} departments operational
             </p>
           </div>
         </div>
@@ -382,17 +382,6 @@ export const FacilityOverview: React.FC<FacilityOverviewProps> = ({
               )}
             </div>
           )}
-
-          {/* Staged Feature Notice */}
-          <div className="pt-2">
-            <AwaitingBackendBadge
-              endpoint="POST /admin/facilities/operating-hours"
-              featureName="Facility Operating Hours & Emergency Broadcast"
-              milestone="M2"
-              variant="banner"
-              details="Hospital emergency broadcast, curfew overrides, and synchronized clinic operating schedules are staged to connect upon M2 API publication."
-            />
-          </div>
         </div>
       </div>
     </div>

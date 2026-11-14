@@ -242,37 +242,6 @@ export const ReceptionCounterManager: React.FC<ReceptionCounterManagerProps> = (
         </div>
       </div>
 
-      {/* Staff & Receptionist Provisioning Notice (Awaiting M2) */}
-      <div className="surface p-6 rounded-2xl border border-border/70 bg-card/60 space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-2">
-              <Users className="size-4 text-primary" />
-              <h2 className="text-base font-semibold text-foreground">
-                Specialty Receptionist Account Provisioning
-              </h2>
-            </div>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Automated receptionist account generation and desk assignment.
-            </p>
-          </div>
-          <AwaitingBackendBadge
-            endpoint="POST /admin/departments/:id/receptionists"
-            featureName="Receptionist Account Provisioning"
-            milestone="M2"
-            variant="pill"
-          />
-        </div>
-
-        <AwaitingBackendBadge
-          endpoint="POST /admin/departments/:id/receptionists"
-          featureName="Staff & Receptionist API Contract"
-          milestone="M2"
-          variant="banner"
-          details="Staff user account provisioning, role issuance, and department intake desk binding will be active upon deployment of M2's receptionist provisioning service."
-        />
-      </div>
-
       {/* Search and Filters */}
       <FilterBar
         searchValue={searchTerm}

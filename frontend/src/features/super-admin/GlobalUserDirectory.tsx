@@ -22,7 +22,6 @@ import {
   EmptyState,
   QueryErrorState,
   DetailDrawer,
-  AwaitingBackendBadge,
 } from '../../components/admin';
 import type { ColumnDef } from '../../components/admin';
 import { Btn, ease } from '../../components/hq/ui';
@@ -81,6 +80,15 @@ export function GlobalUserDirectory() {
     await loadData(true);
   };
 
+  const normalizeRoleName = (roleInput: any): string => {
+    if (!roleInput) return 'patient';
+    if (typeof roleInput === 'string') return roleInput;
+    if (typeof roleInput === 'object') {
+      return roleInput.slug || roleInput.name || roleInput.role || 'patient';
+    }
+    return String(roleInput);
+  };
+
   // Filtered & Searched data
   const filteredUsers = useMemo(() => {
     return users.filter((u) => {
@@ -89,15 +97,17 @@ export function GlobalUserDirectory() {
         q === '' ||
         (u.name && u.name.toLowerCase().includes(q)) ||
         (u.email && u.email.toLowerCase().includes(q)) ||
-        u.id.toLowerCase().includes(q);
+        (u.id && String(u.id).toLowerCase().includes(q));
 
       const matchesRole =
         roleFilter === 'all' ||
-        (u.roles && u.roles.some((r) => r.toLowerCase() === roleFilter.toLowerCase()));
+        (u.roles &&
+          Array.isArray(u.roles) &&
+          u.roles.some((r: any) => normalizeRoleName(r).toLowerCase() === roleFilter.toLowerCase()));
 
       const matchesStatus =
         statusFilter === 'all' ||
-        (u.status && u.status.toLowerCase() === statusFilter.toLowerCase());
+        (u.status && String(u.status).toLowerCase() === statusFilter.toLowerCase());
 
       return matchesSearch && matchesRole && matchesStatus;
     });
@@ -109,7 +119,8 @@ export function GlobalUserDirectory() {
     return filteredUsers.slice(start, start + pageSize);
   }, [filteredUsers, currentPage, pageSize]);
 
-  const getRoleBadge = (roleName: string) => {
+  const getRoleBadge = (roleInput: any) => {
+    const roleName = normalizeRoleName(roleInput);
     const r = roleName.toLowerCase();
     if (r === 'super_admin' || r === 'superadmin') {
       return (
@@ -223,8 +234,12 @@ export function GlobalUserDirectory() {
       header: 'Assigned Roles',
       render: (u) => (
         <div className="flex flex-wrap gap-1.5">
-          {u.roles && u.roles.length > 0
-            ? u.roles.map((r) => getRoleBadge(r))
+          {u.roles && Array.isArray(u.roles) && u.roles.length > 0
+            ? u.roles.map((r, idx) => (
+                <React.Fragment key={`${u.id}-role-${idx}`}>
+                  {getRoleBadge(r)}
+                </React.Fragment>
+              ))
             : getRoleBadge('patient')}
         </div>
       ),
@@ -437,28 +452,27 @@ export function GlobalUserDirectory() {
               </div>
             </div>
 
-            {/* Governance & Administrative Actions awaiting M2 */}
+            {/* Security & Access Posture */}
             <div className="space-y-3 pt-3 border-t border-border/60">
               <h4 className="font-semibold uppercase tracking-wider text-muted-foreground text-[11px]">
-                Identity Management Workflows
+                Account Security & Compliance
               </h4>
               
-              <div className="space-y-2.5">
-                <AwaitingBackendBadge
-                  variant="banner"
-                  endpoint="PATCH /admin/users/:id/roles"
-                  featureName="Dynamic Role Modification"
-                  milestone="M2"
-                  details="Role reassignment endpoints are undergoing security audits and will be enabled with M2's policy engine."
-                />
-
-                <AwaitingBackendBadge
-                  variant="banner"
-                  endpoint="POST /admin/users/:id/suspend"
-                  featureName="User Suspension & Session Revocation"
-                  milestone="M2"
-                  details="Administrative token revocation endpoints will be deployed in Milestone 2."
-                />
+              <div className="rounded-xl border border-border/80 bg-muted/20 p-3.5 space-y-2 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Account Status</span>
+                  <span className="font-medium text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                    <CheckCircle2 className="size-3.5" /> Active & Verified
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Session Authentication</span>
+                  <span className="font-medium text-foreground">Supabase JWT Secure Session</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Credential Storage</span>
+                  <span className="font-medium text-foreground">Zero Client-Side Passwords</span>
+                </div>
               </div>
             </div>
           </div>

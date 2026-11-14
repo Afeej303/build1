@@ -307,21 +307,7 @@ export const DoctorAssignment: React.FC<DoctorAssignmentProps> = ({
               Weekly consultation slots, appointment limits, and automated shift handovers.
             </p>
           </div>
-          <AwaitingBackendBadge
-            endpoint="POST /admin/doctors/schedules"
-            featureName="Doctor Shift Rostering"
-            milestone="M2"
-            variant="pill"
-          />
         </div>
-
-        <AwaitingBackendBadge
-          endpoint="POST /admin/doctors/schedules"
-          featureName="Doctor Rostering Contract"
-          milestone="M2"
-          variant="banner"
-          details="Doctor roster scheduling, recurring slot generation, and shift limits will be connected when M2 publishes the schedule contract."
-        />
 
         {/* Mock Roster Schedule Cards Preview */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 opacity-85 pointer-events-none select-none">

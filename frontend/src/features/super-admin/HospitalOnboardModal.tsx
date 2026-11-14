@@ -3,7 +3,6 @@ import { AnimatePresence, motion } from 'motion/react';
 import { Building2, X, AlertCircle, CheckCircle2, ShieldAlert } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { ease, Btn } from '../../components/hq/ui';
-import { AwaitingBackendBadge } from '../../components/admin';
 import { superAdminService } from '../../services/superAdminService';
 import type { Hospital } from '../../services/types';
 
@@ -227,17 +226,6 @@ export function HospitalOnboardModal({
                   placeholder="e.g. 100 Medical Parkway, Suite 400"
                   disabled={submitting}
                   className="h-10 w-full rounded-xl border border-input bg-card px-3.5 text-sm text-foreground outline-none transition-[border-color,box-shadow] duration-200 placeholder:text-muted-foreground/60 focus:border-primary focus:ring-2 focus:ring-ring disabled:opacity-50"
-                />
-              </div>
-
-              {/* Security & Awaiting Backend Banner */}
-              <div className="pt-2">
-                <AwaitingBackendBadge
-                  variant="banner"
-                  endpoint="POST /admin/hospitals/:id/admins"
-                  featureName="Hospital Admin User Provisioning"
-                  milestone="M2"
-                  details="To maintain high security, administrator passwords are never generated or transmitted through client-side bundles. Once the M2 hospital admin dispatch endpoint is released, designated administrative officers will receive cryptographic invitation links directly."
                 />
               </div>
 

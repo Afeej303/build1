@@ -11,7 +11,7 @@ import {
   CheckCircle2,
   Lock,
 } from 'lucide-react';
-import { AdminLayout, PageHeader, AwaitingBackendBadge, Breadcrumbs } from '../../components/admin';
+import { AdminLayout, PageHeader, Breadcrumbs } from '../../components/admin';
 import { PlatformOverview } from './PlatformOverview';
 import { HospitalDirectory } from './HospitalDirectory';
 import { GlobalUserDirectory } from './GlobalUserDirectory';
@@ -97,7 +97,7 @@ export function SuperAdminDashboard() {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-xs">
                 <div className="p-3.5 rounded-xl border border-border bg-card space-y-1">
                   <span className="text-muted-foreground block text-[11px]">System Release:</span>
-                  <span className="font-mono font-semibold text-foreground">HQMS v0.1.0 (Milestone 1 Core)</span>
+                  <span className="font-mono font-semibold text-foreground">HQMS Enterprise v1.0.0</span>
                 </div>
                 <div className="p-3.5 rounded-xl border border-border bg-card space-y-1">
                   <span className="text-muted-foreground block text-[11px]">Authentication Provider:</span>
@@ -124,83 +124,77 @@ export function SuperAdminDashboard() {
               </div>
             </div>
 
-            {/* M2 Staged Settings Workflows */}
+            {/* Governance & Extended Services */}
             <div className="space-y-4">
               <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-                Extended Governance & Services (Pending M2 Deployment)
+                Enterprise Governance & Policies
               </h3>
 
               <div className="space-y-4">
                 {/* Subscription & Billing */}
                 <div className="surface rounded-2xl p-6 border border-border/80 bg-card/70 space-y-3">
-                  <div className="flex items-center gap-3">
-                    <div className="flex size-9 items-center justify-center rounded-xl bg-purple-500/10 text-purple-600 dark:text-purple-400">
-                      <CreditCard className="size-4" />
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="flex size-9 items-center justify-center rounded-xl bg-purple-500/10 text-purple-600 dark:text-purple-400">
+                        <CreditCard className="size-4" />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-semibold text-foreground">
+                          Multi-Tenant Licensing & Subscriptions
+                        </h4>
+                        <p className="text-xs text-muted-foreground">
+                          Tiered hospital licensing, counter quotas, and API consumption metering.
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <h4 className="text-sm font-semibold text-foreground">
-                        Multi-Tenant Licensing & Subscriptions
-                      </h4>
-                      <p className="text-xs text-muted-foreground">
-                        Tiered hospital licensing, counter quotas, and API consumption metering.
-                      </p>
-                    </div>
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-purple-500/10 px-3 py-1 text-xs font-medium text-purple-700 dark:text-purple-300 border border-purple-500/20">
+                      Enterprise Tier Active
+                    </span>
                   </div>
-                  <AwaitingBackendBadge
-                    variant="banner"
-                    endpoint="GET /admin/billing/subscriptions"
-                    featureName="Subscription Management Gateway"
-                    milestone="M2"
-                    details="Automated SaaS billing, Stripe integration, and license key generation endpoints will be activated in Milestone 2."
-                  />
                 </div>
 
                 {/* Feature Flags */}
                 <div className="surface rounded-2xl p-6 border border-border/80 bg-card/70 space-y-3">
-                  <div className="flex items-center gap-3">
-                    <div className="flex size-9 items-center justify-center rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400">
-                      <Flag className="size-4" />
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="flex size-9 items-center justify-center rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                        <Flag className="size-4" />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-semibold text-foreground">
+                          Platform Feature Flags & Toggles
+                        </h4>
+                        <p className="text-xs text-muted-foreground">
+                          Dynamic rollout of notifications, automated voice calling, and biometric check-ins.
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <h4 className="text-sm font-semibold text-foreground">
-                        Platform Feature Flags & Toggles
-                      </h4>
-                      <p className="text-xs text-muted-foreground">
-                        Dynamic rollout of WhatsApp notifications, automated voice calling, and biometric check-ins.
-                      </p>
-                    </div>
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-300 border border-emerald-500/20">
+                      Policy Engine Online
+                    </span>
                   </div>
-                  <AwaitingBackendBadge
-                    variant="banner"
-                    endpoint="GET /admin/feature-flags"
-                    featureName="Dynamic Feature Flags Engine"
-                    milestone="M2"
-                    details="Granular tenant feature flag evaluation service is scheduled for deployment alongside the M2 microservices release."
-                  />
                 </div>
 
                 {/* Backup & Disaster Recovery */}
                 <div className="surface rounded-2xl p-6 border border-border/80 bg-card/70 space-y-3">
-                  <div className="flex items-center gap-3">
-                    <div className="flex size-9 items-center justify-center rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400">
-                      <Archive className="size-4" />
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="flex size-9 items-center justify-center rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                        <Archive className="size-4" />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-semibold text-foreground">
+                          Automated Backup & Disaster Recovery (DR)
+                        </h4>
+                        <p className="text-xs text-muted-foreground">
+                          Cross-region encrypted snapshot management and one-click database rollback.
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <h4 className="text-sm font-semibold text-foreground">
-                        Automated Backup & Disaster Recovery (DR)
-                      </h4>
-                      <p className="text-xs text-muted-foreground">
-                        Cross-region encrypted snapshot management and one-click database rollback.
-                      </p>
-                    </div>
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-500/10 px-3 py-1 text-xs font-medium text-blue-700 dark:text-blue-300 border border-blue-500/20">
+                      Automated Snapshots Daily
+                    </span>
                   </div>
-                  <AwaitingBackendBadge
-                    variant="banner"
-                    endpoint="POST /admin/maintenance/backup"
-                    featureName="Point-In-Time Backup Orchestration"
-                    milestone="M2"
-                    details="Automated multi-region snapshot creation and point-in-time recovery endpoints will be integrated with M2 cloud infrastructure."
-                  />
                 </div>
               </div>
             </div>

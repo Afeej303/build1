@@ -4,7 +4,7 @@
  * Live API calls route strictly through apiClient methods.
  */
 
-import { apiClient } from '../lib/api-client';
+import { apiClient, ApiError } from '../lib/api-client';
 import type {
   Hospital,
   Department,
@@ -12,6 +12,8 @@ import type {
   StaffUser,
   AuditLogEntry,
   ReceptionCounter,
+  DoctorSchedule,
+  WebIncident,
 } from './types';
 import type { StaffQueuesResponse } from '../types/contract';
 
@@ -23,6 +25,46 @@ export interface HospitalFacilityStats {
   receptionCountersCount: number;
   activeCountersCount: number;
   counterAllowance: number;
+}
+
+export interface ProvisionHospitalAdminPayload {
+  name: string;
+  email: string;
+  phone?: string;
+}
+
+export interface ProvisionStaffPayload {
+  name: string;
+  email: string;
+  role: 'doctor' | 'receptionist';
+  departmentId?: string;
+  phone?: string;
+}
+
+export interface AssignReceptionistPayload {
+  userId: string;
+  departmentId: string;
+  counterNumber?: number | string;
+  counterLabel?: string;
+}
+
+export interface DoctorSchedulePayload {
+  doctorId: string;
+  departmentId: string;
+  queueId: string;
+  roomLabel?: string;
+  dayOfWeek: number;
+  startTime: string;
+  endTime: string;
+  slotDurationMinutes?: number;
+}
+
+export interface CreateIncidentPayload {
+  title: string;
+  severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
+  category: string;
+  description: string;
+  component: string;
 }
 
 export class HospitalAdminService {
@@ -307,6 +349,78 @@ export class HospitalAdminService {
     }
 
     return counters;
+  }
+
+  // ============================================================================
+  // Phase B Service Integration Points (Pending M2 Backend Endpoints)
+  // Strict requirement: Never fake mock success responses!
+  // ============================================================================
+
+  /**
+   * Phase B: Provision a new Hospital Administrator
+   * Target endpoint: POST /admin/hospitals/:id/admins
+   */
+  async provisionHospitalAdmin(hospitalId: string, payload: ProvisionHospitalAdminPayload): Promise<StaffUser> {
+    if (!hospitalId) throw new Error('Hospital ID is required.');
+    throw new ApiError('Hospital Administrator provisioning is currently unavailable.', {
+      code: 'AWAITING_M2_API',
+    });
+  }
+
+  /**
+   * Provision a Doctor or Receptionist staff member
+   */
+  async provisionStaffUser(hospitalId: string, payload: ProvisionStaffPayload): Promise<StaffUser> {
+    if (!hospitalId) throw new Error('Hospital ID is required.');
+    throw new ApiError('Staff member provisioning is currently unavailable.', {
+      code: 'AWAITING_M2_API',
+    });
+  }
+
+  /**
+   * Assign receptionist to department and counter
+   */
+  async assignReceptionist(hospitalId: string, payload: AssignReceptionistPayload): Promise<ReceptionCounter> {
+    if (!hospitalId) throw new Error('Hospital ID is required.');
+    throw new ApiError('Receptionist department assignment is currently unavailable.', {
+      code: 'AWAITING_M2_API',
+    });
+  }
+
+  /**
+   * Configure doctor schedule and room assignment
+   */
+  async configureDoctorSchedule(hospitalId: string, payload: DoctorSchedulePayload): Promise<DoctorSchedule> {
+    if (!hospitalId) throw new Error('Hospital ID is required.');
+    throw new ApiError('Doctor schedule configuration is currently unavailable.', {
+      code: 'AWAITING_M2_API',
+    });
+  }
+
+  /**
+   * Submit diagnostic web incident
+   */
+  async submitFacilityIncident(hospitalId: string, payload: CreateIncidentPayload): Promise<WebIncident> {
+    if (!hospitalId) throw new Error('Hospital ID is required.');
+    throw new ApiError('Incident submission is currently unavailable.', {
+      code: 'AWAITING_M2_API',
+    });
+  }
+
+  /**
+   * Phase B: Fetch facility-scoped audit log stream
+   * Target endpoint: GET /staff/audit-log or GET /admin/hospitals/:id/audit-logs
+   */
+  async fetchFacilityAuditLogs(hospitalId: string, page = 1, limit = 25): Promise<{ items: AuditLogEntry[]; meta: any }> {
+    const res = await apiClient.getStaffAuditLog();
+    return {
+      items: res.items || [],
+      meta: {
+        page,
+        limit,
+        totalItems: res.items?.length || 0,
+      },
+    };
   }
 }
 

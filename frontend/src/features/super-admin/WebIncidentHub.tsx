@@ -21,7 +21,6 @@ import {
   FilterBar,
   EmptyState,
   DetailDrawer,
-  AwaitingBackendBadge,
 } from '../../components/admin';
 import type { ColumnDef } from '../../components/admin';
 import { Btn, minutesAgo, ease } from '../../components/hq/ui';
@@ -260,15 +259,6 @@ export function WebIncidentHub() {
 
   return (
     <div className="space-y-6">
-      {/* Top Banner Notice: Awaiting Backend Support */}
-      <AwaitingBackendBadge
-        variant="banner"
-        endpoint="POST /admin/incidents"
-        featureName="Platform Incident Triage Persistence"
-        milestone="M2"
-        details="Incident triage console is operational in client memory with strict validation. Persistent multi-hospital incident dispatch and automated PagerDuty/Slack escalation will automatically synchronize upon M2 API deployment."
-      />
-
       {/* Page Header */}
       <PageHeader
         title="Web Incident Triage Hub"
@@ -422,15 +412,6 @@ export function WebIncidentHub() {
                 {selectedIncident.description}
               </p>
             </div>
-
-            {/* M2 persistence notice */}
-            <AwaitingBackendBadge
-              variant="banner"
-              endpoint="PATCH /admin/incidents/:id"
-              featureName="Live Triage Status Transition"
-              milestone="M2"
-              details="Status transitions and diagnostic comments will sync with the central audit log upon deployment of M2 incident API."
-            />
           </div>
         )}
       </DetailDrawer>
@@ -538,13 +519,6 @@ export function WebIncidentHub() {
                   className="w-full rounded-xl border border-input bg-card p-3 text-xs text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-ring resize-none"
                 />
               </div>
-
-              <AwaitingBackendBadge
-                variant="chip"
-                endpoint="POST /admin/incidents"
-                featureName="Backend Incident Ingestion"
-                milestone="M2"
-              />
 
               <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-border/60">
                 <Btn

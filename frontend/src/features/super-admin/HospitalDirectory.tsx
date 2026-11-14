@@ -14,7 +14,7 @@ import {
   CheckCircle2,
   AlertCircle,
 } from 'lucide-react';
-import { PageHeader, StatCard, DataTable, FilterBar, Pagination, EmptyState, QueryErrorState, DetailDrawer, AwaitingBackendBadge } from '../../components/admin';
+import { PageHeader, StatCard, DataTable, FilterBar, Pagination, EmptyState, QueryErrorState, DetailDrawer } from '../../components/admin';
 import type { ColumnDef } from '../../components/admin';
 import { Btn, ease } from '../../components/hq/ui';
 import { superAdminService } from '../../services/superAdminService';
@@ -433,15 +433,6 @@ export function HospitalDirectory() {
                   No dedicated hospital admins assigned to this facility.
                 </div>
               )}
-
-              {/* M2 Pending Admin User Provisioning Notice */}
-              <AwaitingBackendBadge
-                variant="banner"
-                endpoint="POST /admin/hospitals/:id/admins"
-                featureName="Direct Admin User Dispatch"
-                milestone="M2"
-                details="Secure provisioning of dedicated hospital administrator credentials requires the M2 backend dispatch service. In M1, platform-level credentials manage initial deployment."
-              />
             </div>
           </div>
         )}

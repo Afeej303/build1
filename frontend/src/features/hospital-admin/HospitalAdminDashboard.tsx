@@ -129,6 +129,11 @@ export const HospitalAdminDashboard: React.FC<HospitalAdminDashboardProps> = ({
     queryFn: () => hospitalAdminService.fetchHospitalFacility(verifiedHospitalId),
     enabled: !authLoading,
     staleTime: 10000,
+    retry: (failureCount, err: any) => {
+      // Do not repeat client errors (401, 403, 404)
+      if (err?.status && err.status >= 400 && err.status < 500) return false;
+      return failureCount < 2; // Strict requirement: Avoid infinite automatic retries
+    },
   });
 
   const handleIncidentReported = (newIncident: WebIncident) => {
@@ -165,10 +170,10 @@ export const HospitalAdminDashboard: React.FC<HospitalAdminDashboardProps> = ({
         <div className="size-10 rounded-full border-2 border-primary border-t-transparent animate-spin" />
         <div className="space-y-1">
           <p className="text-sm font-semibold text-foreground">
-            Verifying Multi-Tenant Identity...
+            Loading Operations Dashboard...
           </p>
           <p className="text-xs text-muted-foreground">
-            Authenticating facility permissions and hospital tenant partition.
+            Verifying facility credentials and loading clinical data.
           </p>
         </div>
       </div>
@@ -177,13 +182,36 @@ export const HospitalAdminDashboard: React.FC<HospitalAdminDashboardProps> = ({
 
   // Facility Error or Not Found
   if (isFacilityError || !hospital) {
+    const isNetwork = Boolean(
+      (facilityError as any)?.isNetworkError ||
+        (facilityError as any)?.code === 'BACKEND_CONNECTION_ERROR' ||
+        (facilityError instanceof TypeError && facilityError.message.includes('fetch'))
+    );
+
+    // Genuine 404 is ONLY when the network request succeeds, but no facility belongs to this admin
+    const isGenuineNotFound = !isFacilityError && !hospital;
+    const resolvedStatus = isGenuineNotFound ? 404 : (facilityError as any)?.status;
+    const resolvedCode = isGenuineNotFound ? 'FACILITY_NOT_FOUND' : (facilityError as any)?.code;
+
     return (
       <div className="min-h-screen bg-background p-6 flex flex-col justify-center max-w-xl mx-auto space-y-4">
         <QueryErrorState
-          statusCode={404}
-          errorCode="FACILITY_NOT_FOUND"
-          title="Hospital Facility Not Found"
-          message="Could not resolve an authorized hospital tenant for your administrator credentials. Ensure your profile has verified staff assignments."
+          statusCode={resolvedStatus}
+          errorCode={resolvedCode}
+          title={
+            isNetwork
+              ? 'Backend Connectivity Error'
+              : isGenuineNotFound
+              ? 'Hospital Facility Not Found'
+              : undefined
+          }
+          message={
+            isNetwork
+              ? 'Unable to communicate with the healthcare server. Please check your network connection and verify server connectivity.'
+              : isGenuineNotFound
+              ? 'Could not resolve an authorized healthcare facility for your account. Please contact your system administrator.'
+              : (facilityError as Error)?.message
+          }
           error={facilityError}
           onRetry={() => {
             refetchFacility();
@@ -418,14 +446,6 @@ export const HospitalAdminDashboard: React.FC<HospitalAdminDashboardProps> = ({
               }
             />
 
-            <AwaitingBackendBadge
-              endpoint="POST /admin/incidents"
-              featureName="Centralized Facility Incident Sync"
-              milestone="M2"
-              variant="banner"
-              details="Incidents are stored in browser diagnostic storage. Upon M2 API deployment, records will automatically replicate to the central incident telemetry service."
-            />
-
             <DataTable
               columns={incidentColumns}
               data={incidents}
@@ -547,14 +567,6 @@ export const HospitalAdminDashboard: React.FC<HospitalAdminDashboardProps> = ({
                   <p>QR Code Barcode: UHID Encoded (ISO/IEC 18004)</p>
                   <p>Driver Mode: WebUSB / Raw IP Network LPR Spooler</p>
                 </div>
-
-                <AwaitingBackendBadge
-                  endpoint="POST /admin/facilities/printers"
-                  featureName="Cloud Thermal Spooler Configuration"
-                  milestone="M2"
-                  variant="banner"
-                  details="Centralized thermal printer IP registry and automated feed cut calibration will be managed via M2's hardware gateway."
-                />
               </div>
 
               {settingsSaved && (

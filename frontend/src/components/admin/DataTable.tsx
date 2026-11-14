@@ -179,16 +179,24 @@ export function DataTable<T>({
                       const alignClass =
                         col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left';
 
+                      let renderedCell: React.ReactNode;
+                      try {
+                        renderedCell = col.render
+                          ? col.render(row, index)
+                          : (row as Record<string, unknown>)[col.key] !== undefined
+                          ? String((row as Record<string, unknown>)[col.key])
+                          : '—';
+                      } catch (cellErr) {
+                        console.error(`DataTable cell render error on column ${col.key}:`, cellErr);
+                        renderedCell = <span className="text-muted-foreground text-xs italic">—</span>;
+                      }
+
                       return (
                         <td
                           key={`${rowKey}-${col.key}`}
                           className={cn('px-4 py-3.5 text-foreground align-middle', alignClass, col.className)}
                         >
-                          {col.render
-                            ? col.render(row, index)
-                            : (row as Record<string, unknown>)[col.key] !== undefined
-                            ? String((row as Record<string, unknown>)[col.key])
-                            : '—'}
+                          {renderedCell}
                         </td>
                       );
                     })}

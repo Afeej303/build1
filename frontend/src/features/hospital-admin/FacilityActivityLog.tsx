@@ -71,10 +71,15 @@ export const FacilityActivityLog: React.FC<FacilityActivityLogProps> = ({ hospit
     return matchesSearch && matchesAction;
   });
 
-  // Handle 403 or API Error
+  // Handle 403, Network Error, or API Error
   if (isError) {
-    const errorMsg = (error as Error)?.message || '';
-    const is403 = errorMsg.includes('403') || errorMsg.includes('Forbidden') || (error as any)?.status === 403;
+    const isNetwork = Boolean(
+      (error as any)?.isNetworkError ||
+        (error as any)?.code === 'BACKEND_CONNECTION_ERROR' ||
+        (error instanceof TypeError && error.message.includes('fetch'))
+    );
+    const resolvedStatus = (error as any)?.status;
+    const is403 = resolvedStatus === 403 || (error as Error)?.message?.includes('403');
 
     return (
       <div className="space-y-6">
@@ -89,13 +94,27 @@ export const FacilityActivityLog: React.FC<FacilityActivityLogProps> = ({ hospit
         />
 
         <QueryErrorState
-          statusCode={is403 ? 403 : 500}
-          errorCode={is403 ? 'FORBIDDEN_STAFF_ASSIGNMENT' : 'AUDIT_STREAM_ERROR'}
-          title={is403 ? 'Audit Log Access Restricted' : 'Failed to Retrieve Activity Log'}
+          statusCode={isNetwork ? undefined : is403 ? 403 : resolvedStatus}
+          errorCode={
+            isNetwork
+              ? 'BACKEND_CONNECTION_ERROR'
+              : is403
+              ? 'FORBIDDEN_STAFF_ASSIGNMENT'
+              : (error as any)?.code || 'AUDIT_STREAM_ERROR'
+          }
+          title={
+            isNetwork
+              ? 'Backend Connectivity Error'
+              : is403
+              ? 'Audit Log Access Restricted'
+              : undefined
+          }
           message={
-            is403
-              ? 'The audit stream requires staff reception assignment or superadmin privileges. In M1/M2 transition, staff audit logs are restricted to verified assigned reception desks.'
-              : errorMsg || 'Unable to connect to the facility activity audit stream.'
+            isNetwork
+              ? 'Unable to connect to the backend server. Failed to retrieve facility audit stream due to network or server connectivity.'
+              : is403
+              ? 'The audit stream requires staff reception assignment or administrator privileges.'
+              : (error as Error)?.message
           }
           error={error}
           onRetry={() => {

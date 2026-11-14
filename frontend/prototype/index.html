@@ -1,0 +1,965 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HQMS — Hospital Queue Management Prototype</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@500;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      /* HQMS Clinical Palette */
+      --color-navy: #0F172A;
+      --color-navy-light: #1E293B;
+      --color-teal: #0891B2;
+      --color-teal-hover: #0E7490;
+      --color-cyan: #0284C7;
+      --color-slate-50: #F8FAFC;
+      --color-slate-100: #F1F5F9;
+      --color-slate-200: #E2E8F0;
+      --color-slate-400: #94A3B8;
+      --color-slate-600: #475569;
+      --color-slate-800: #1E293B;
+      --color-slate-900: #0F172A;
+      
+      /* Semantic Status */
+      --color-emergency: #EF4444;
+      --color-success: #10B981;
+      --color-warning: #F59E0B;
+      --color-called: #0284C7;
+
+      /* RE Design Tokens (Reverse engineered from Temlis & Fontsight) */
+      --radius-sm: 8px;
+      --radius-md: 12px;
+      --radius-lg: 16px;
+      --radius-pill: 9999px;
+      
+      --shadow-ambient: 0 1px 3px rgba(15, 23, 42, 0.05);
+      --shadow-card: 0 4px 12px -2px rgba(15, 23, 42, 0.08), 0 2px 4px -1px rgba(15, 23, 42, 0.04);
+      --shadow-lift: 0 10px 25px -5px rgba(15, 23, 42, 0.12);
+      
+      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --font-mono: 'Geist Mono', "SF Mono", Monaco, Consolas, monospace;
+      
+      /* Micro-transitions */
+      --ease-tactile: cubic-bezier(0.16, 1, 0.3, 1);
+      --transition-fast: 150ms var(--ease-tactile);
+      --transition-normal: 250ms var(--ease-tactile);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background-color: #0B0F17;
+      color: var(--color-slate-900);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 16px;
+    }
+
+    /* Top Prototype Control Dock (Inspired by Fontsight's UI dock) */
+    .prototype-dock {
+      background: rgba(30, 41, 59, 0.85);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: var(--radius-pill);
+      padding: 6px 10px;
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      margin-bottom: 20px;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+      z-index: 50;
+    }
+
+    .dock-title {
+      color: #94A3B8;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 0 10px;
+      border-right: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .dock-btn {
+      background: transparent;
+      border: none;
+      color: #CBD5E1;
+      padding: 6px 14px;
+      border-radius: var(--radius-pill);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all var(--transition-fast);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .dock-btn:hover {
+      background: rgba(255, 255, 255, 0.08);
+      color: #FFF;
+      transform: translateY(-1px);
+    }
+
+    .dock-btn.active {
+      background: var(--color-teal);
+      color: #FFF;
+      font-weight: 600;
+      box-shadow: 0 2px 8px rgba(8, 145, 178, 0.4);
+    }
+
+    /* Viewport Simulator Wrapper */
+    .viewport-frame {
+      width: 100%;
+      max-width: 390px;
+      min-height: 740px;
+      background: var(--color-slate-50);
+      border-radius: 36px;
+      overflow: hidden;
+      box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.5), 0 0 0 10px #1E293B;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      transition: max-width var(--transition-normal);
+    }
+
+    .viewport-frame.tablet {
+      max-width: 768px;
+    }
+
+    .viewport-frame.fullscreen {
+      max-width: 1100px;
+      border-radius: 16px;
+    }
+
+    /* Mobile Status Bar Simulation */
+    .phone-notch {
+      height: 36px;
+      background: var(--color-navy);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 20px;
+      color: #94A3B8;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+
+    /* Screen Container */
+    .screen {
+      display: none;
+      flex-direction: column;
+      flex: 1;
+      overflow-y: auto;
+    }
+
+    .screen.active {
+      display: flex;
+    }
+
+    /* App Header */
+    .app-header {
+      background: var(--color-navy);
+      color: #FFF;
+      padding: 16px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .app-header .role-badge {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #38BDF8;
+      background: rgba(56, 189, 248, 0.12);
+      padding: 3px 8px;
+      border-radius: var(--radius-pill);
+    }
+
+    .app-header h1 {
+      font-size: 17px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+
+    .content-area {
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      flex: 1;
+    }
+
+    /* RE Card Surface (Advisory Temlis style) */
+    .card {
+      background: #FFFFFF;
+      border: 1px solid var(--color-slate-200);
+      border-radius: var(--radius-md);
+      padding: 16px;
+      box-shadow: var(--shadow-ambient);
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+
+    .card-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--color-slate-600);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    /* Input Field (Salonist & Temlis minimal input) */
+    .input-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+
+    .input-label {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--color-slate-600);
+    }
+
+    .input-field {
+      height: 44px;
+      border: 1px solid var(--color-slate-200);
+      border-radius: var(--radius-md);
+      padding: 0 14px;
+      font-size: 14px;
+      font-family: var(--font-sans);
+      color: var(--color-slate-900);
+      background: #FFF;
+      outline: none;
+      transition: all var(--transition-fast);
+    }
+
+    .input-field:focus {
+      border-color: var(--color-teal);
+      box-shadow: 0 0 0 3px rgba(8, 145, 178, 0.15);
+    }
+
+    /* Buttons (Reverse engineered tactile response) */
+    .btn-primary {
+      height: 46px;
+      background: var(--color-navy);
+      color: #FFFFFF;
+      border: none;
+      border-radius: var(--radius-md);
+      font-size: 14px;
+      font-weight: 600;
+      font-family: var(--font-sans);
+      letter-spacing: -0.01em;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      width: 100%;
+      box-shadow: var(--shadow-ambient);
+      transition: transform var(--transition-fast), background-color var(--transition-fast), box-shadow var(--transition-fast);
+    }
+
+    .btn-primary:hover {
+      background: var(--color-navy-light);
+      transform: scale(0.985) translateY(-1px);
+      box-shadow: var(--shadow-card);
+    }
+
+    .btn-primary:active {
+      transform: scale(0.96) translateY(1px);
+    }
+
+    .btn-teal {
+      background: var(--color-teal);
+    }
+    .btn-teal:hover {
+      background: var(--color-teal-hover);
+    }
+
+    .btn-success {
+      background: var(--color-success);
+    }
+    .btn-success:hover {
+      background: #059669;
+    }
+
+    /* Monospace Token Displays */
+    .token-badge {
+      font-family: var(--font-mono);
+      font-weight: 700;
+      font-size: 14px;
+      padding: 4px 10px;
+      border-radius: var(--radius-sm);
+      background: var(--color-slate-100);
+      color: var(--color-slate-800);
+      border: 1px solid var(--color-slate-200);
+      display: inline-block;
+    }
+
+    .token-badge.called {
+      background: rgba(2, 132, 199, 0.1);
+      color: var(--color-cyan);
+      border-color: rgba(2, 132, 199, 0.3);
+    }
+
+    /* Thermal Slip Modal (Subagent 3 verified) */
+    .thermal-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.7);
+      backdrop-filter: blur(4px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      z-index: 100;
+    }
+
+    .thermal-overlay.active {
+      display: flex;
+    }
+
+    .thermal-slip {
+      background: #FFFFFF;
+      width: 100%;
+      max-width: 310px;
+      border-radius: var(--radius-sm);
+      padding: 24px 20px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.25);
+      border-top: 5px solid var(--color-navy);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      position: relative;
+    }
+
+    .slip-hospital-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--color-slate-800);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .slip-dept {
+      font-size: 12px;
+      color: var(--color-slate-600);
+      margin-bottom: 12px;
+    }
+
+    .slip-token {
+      font-family: var(--font-mono);
+      font-size: 46px;
+      font-weight: 800;
+      color: var(--color-navy);
+      line-height: 1;
+      letter-spacing: -0.03em;
+      margin: 12px 0 6px 0;
+    }
+
+    .slip-info-grid {
+      width: 100%;
+      border-top: 1px dashed var(--color-slate-200);
+      border-bottom: 1px dashed var(--color-slate-200);
+      padding: 10px 0;
+      margin: 10px 0 16px 0;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: 12px;
+    }
+
+    .slip-row {
+      display: flex;
+      justify-content: space-between;
+      color: var(--color-slate-600);
+    }
+    .slip-row strong {
+      color: var(--color-slate-900);
+    }
+
+    .slip-barcode-sim {
+      width: 100%;
+      height: 32px;
+      background: repeating-linear-gradient(
+        90deg,
+        #1E293B,
+        #1E293B 2px,
+        transparent 2px,
+        transparent 5px
+      );
+      margin-bottom: 14px;
+    }
+
+    /* Public Waiting Room TV Board (Subagent 4 verified, 150px Token) */
+    .tv-board {
+      background: #0A0E17;
+      color: #FFF;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      padding: 24px;
+    }
+
+    .tv-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 16px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .tv-calling-card {
+      background: #111827;
+      border: 2px solid var(--color-cyan);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+      margin-top: 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      box-shadow: 0 0 40px rgba(2, 132, 199, 0.2);
+    }
+
+    .tv-calling-label {
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #38BDF8;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .tv-pulse-dot {
+      width: 10px;
+      height: 10px;
+      background: #38BDF8;
+      border-radius: 50%;
+      animation: pulse 1.5s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.8); }
+    }
+
+    .tv-token-giant {
+      font-family: var(--font-mono);
+      font-size: 96px;
+      font-weight: 800;
+      color: #FFFFFF;
+      letter-spacing: -0.04em;
+      line-height: 1;
+      margin: 16px 0 8px 0;
+      text-shadow: 0 0 20px rgba(56, 189, 248, 0.4);
+    }
+
+    .tv-room-badge {
+      font-size: 20px;
+      font-weight: 700;
+      color: #F8FAFC;
+      background: rgba(255, 255, 255, 0.1);
+      padding: 6px 18px;
+      border-radius: var(--radius-pill);
+    }
+
+    .tv-upcoming-list {
+      margin-top: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .tv-upcoming-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(255, 255, 255, 0.04);
+      padding: 10px 16px;
+      border-radius: var(--radius-sm);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    /* Live Patient Tracker View */
+    .tracker-card {
+      background: #FFF;
+      border: 1px solid var(--color-slate-200);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .tracker-position-circle {
+      width: 120px;
+      height: 120px;
+      border-radius: 50%;
+      border: 6px solid var(--color-teal);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      margin: 16px 0;
+      background: rgba(8, 145, 178, 0.04);
+    }
+
+    .tracker-pos-num {
+      font-size: 38px;
+      font-weight: 800;
+      color: var(--color-navy);
+      line-height: 1;
+    }
+
+    .tracker-pos-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--color-slate-600);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Controls Dock (Reverse Engineered from Fontsight) -->
+  <div class="prototype-dock">
+    <div class="dock-title">HQMS Prototype</div>
+    <button class="dock-btn active" onclick="switchView('receptionist')">Desk</button>
+    <button class="dock-btn" onclick="switchView('doctor')">Doctor</button>
+    <button class="dock-btn" onclick="switchView('patient')">Tracker</button>
+    <button class="dock-btn" onclick="switchView('tv')">TV Board</button>
+    <div style="width: 1px; height: 16px; background: rgba(255,255,255,0.1); margin: 0 4px;"></div>
+    <button class="dock-btn" onclick="toggleViewportSize()" title="Toggle Width (390px / 768px)">390px</button>
+  </div>
+
+  <!-- Mobile Viewport Simulator -->
+  <div class="viewport-frame" id="viewportFrame">
+    <div class="phone-notch">
+      <span>09:41</span>
+      <span>HQMS Clinical 5G</span>
+    </div>
+
+    <!-- 1. RECEPTIONIST WALK-IN DESK SCREEN -->
+    <div class="screen active" id="view-receptionist">
+      <div class="app-header">
+        <div>
+          <div class="role-badge">Reception Desk</div>
+          <h1>Patient Intake</h1>
+        </div>
+        <div style="font-size: 11px; color: #94A3B8;">Counter 1</div>
+      </div>
+
+      <div class="content-area">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Patient Lookup</span>
+            <span class="token-badge" style="font-size: 11px;">M2 Verified</span>
+          </div>
+
+          <div class="input-group">
+            <label class="input-label">Patient UHID / Mobile</label>
+            <div style="display: flex; gap: 8px;">
+              <input type="text" class="input-field" id="patientLookupInput" value="UHID-1001" style="flex: 1;">
+              <button class="btn-primary" onclick="lookupPatient()" style="width: auto; padding: 0 16px; height: 44px; background: var(--color-slate-800);">Search</button>
+            </div>
+          </div>
+
+          <div id="patientDetailsBox" style="background: var(--color-slate-100); border-radius: var(--radius-sm); padding: 12px; margin-top: 8px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <strong style="font-size: 14px; color: var(--color-slate-900);">Rahul Verma</strong>
+                <div style="font-size: 12px; color: var(--color-slate-600);">34 Y / Male • +91 98765 43210</div>
+              </div>
+              <span class="token-badge" style="background: #E0F2FE; color: #0369A1; border: none;">VERIFIED</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Department Allocation</span>
+          </div>
+
+          <div class="input-group">
+            <label class="input-label">Select Specialty Queue</label>
+            <select class="input-field" id="queueSelect">
+              <option value="q_genmed_room2">General Medicine — Dr. Sharma (Room 2)</option>
+              <option value="q_cardio_room4">Cardiology — Dr. Kapoor (Room 4)</option>
+            </select>
+          </div>
+
+          <!-- Single Primary Action Rule -->
+          <button class="btn-primary btn-teal" onclick="issueWalkInToken()" style="margin-top: 8px;">
+            <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            Issue Walk-In Token Slip
+          </button>
+        </div>
+
+        <!-- Recent Issued Tokens List -->
+        <div class="card" style="padding: 12px;">
+          <div class="card-title" style="margin-bottom: 8px;">Queue Activity</div>
+          <div id="receptionistQueueList" style="display: flex; flex-direction: column; gap: 8px;">
+            <!-- Rendered dynamically -->
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. DOCTOR CONSULTATION CONSOLE SCREEN -->
+    <div class="screen" id="view-doctor">
+      <div class="app-header">
+        <div>
+          <div class="role-badge" style="color: #4ADE80; background: rgba(74, 222, 128, 0.12);">Doctor Console</div>
+          <h1>Dr. Sharma</h1>
+        </div>
+        <div style="font-size: 11px; color: #94A3B8;">Room 2 • Gen Med</div>
+      </div>
+
+      <div class="content-area">
+        <!-- Active Consultation Stage -->
+        <div class="card" style="border-left: 4px solid var(--color-teal);">
+          <div class="card-header">
+            <span class="card-title">Active Consultation</span>
+            <span class="token-badge called" id="docCurrentStatusBadge">IDLE</span>
+          </div>
+
+          <div id="docActivePatientArea" style="text-align: center; padding: 12px 0;">
+            <div style="font-size: 12px; color: var(--color-slate-400);">No patient currently called</div>
+            <div style="font-size: 15px; font-weight: 600; color: var(--color-slate-600); margin-top: 4px;">Press "Call Next Patient" to start</div>
+          </div>
+
+          <!-- Single Primary Action Switcher -->
+          <button class="btn-primary btn-teal" id="docPrimaryActionBtn" onclick="doctorCallNext()" style="margin-top: 12px;">
+            Call Next Patient
+          </button>
+        </div>
+
+        <!-- Waiting Room Status -->
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Waiting Queue</span>
+            <span class="token-badge" id="waitingCountBadge">2 Waiting</span>
+          </div>
+
+          <div id="doctorWaitingList" style="display: flex; flex-direction: column; gap: 8px;">
+            <!-- Rendered dynamically -->
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. PATIENT LIVE TRACKER SCREEN -->
+    <div class="screen" id="view-patient">
+      <div class="app-header" style="background: var(--color-slate-900);">
+        <div>
+          <div class="role-badge">Mobile Tracker</div>
+          <h1>My Token Status</h1>
+        </div>
+        <div class="token-badge" id="trackerTokenIdBadge">A-012</div>
+      </div>
+
+      <div class="content-area">
+        <div class="tracker-card">
+          <div style="font-size: 13px; font-weight: 600; color: var(--color-slate-600);">General Medicine • Room 2</div>
+          <div class="tracker-position-circle">
+            <span class="tracker-pos-num" id="trackerPosNum">1</span>
+            <span class="tracker-pos-label">In Line</span>
+          </div>
+
+          <div style="font-size: 18px; font-weight: 700; color: var(--color-navy); margin-bottom: 4px;" id="trackerStatusText">You're Up Next!</div>
+          <div style="font-size: 13px; color: var(--color-slate-600);">Estimated wait: <strong>~5 mins</strong></div>
+        </div>
+
+        <div class="card" style="background: var(--color-slate-100); border: none;">
+          <div style="font-size: 12px; font-weight: 600; color: var(--color-slate-700); margin-bottom: 6px;">Hospital Notification</div>
+          <p style="font-size: 12px; color: var(--color-slate-600); line-height: 1.4;">
+            Please remain near Room 2. Your token number will be announced on the waiting room board and broadcasted via voice audio.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4. PUBLIC WAITING ROOM TV BOARD SCREEN -->
+    <div class="screen" id="view-tv">
+      <div class="tv-board">
+        <div class="tv-header">
+          <div>
+            <div style="font-size: 11px; font-weight: 700; color: #38BDF8; letter-spacing: 0.08em; text-transform: uppercase;">City General Hospital</div>
+            <div style="font-size: 16px; font-weight: 700;">OPD Waiting Signage</div>
+          </div>
+          <div style="font-family: var(--font-mono); font-size: 13px; color: #94A3B8;" id="tvClock">09:41:00</div>
+        </div>
+
+        <div class="tv-calling-card">
+          <div class="tv-calling-label">
+            <div class="tv-pulse-dot"></div>
+            Now Serving
+          </div>
+          <div class="tv-token-giant" id="tvActiveToken">A-012</div>
+          <div class="tv-room-badge" id="tvActiveRoom">Proceed to Room 2</div>
+        </div>
+
+        <div style="margin-top: 20px;">
+          <div style="font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #64748B; margin-bottom: 8px;">Upcoming in Queue</div>
+          <div class="tv-upcoming-list" id="tvUpcomingList">
+            <!-- Dynamically populated -->
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- THERMAL SLIP MODAL (Subagent 3 verified) -->
+    <div class="thermal-overlay" id="thermalModal">
+      <div class="thermal-slip">
+        <div class="slip-hospital-title">City General Hospital</div>
+        <div class="slip-dept" id="slipDept">General Medicine • Room 2</div>
+        
+        <div style="font-size: 11px; color: var(--color-slate-600);">YOUR QUEUE NUMBER</div>
+        <div class="slip-token" id="slipToken">A-014</div>
+        
+        <div class="slip-info-grid">
+          <div class="slip-row"><span>Patient:</span> <strong id="slipPatient">Rahul Verma</strong></div>
+          <div class="slip-row"><span>UHID:</span> <strong id="slipUhid">UHID-1001</strong></div>
+          <div class="slip-row"><span>Date/Time:</span> <strong id="slipDateTime">14 Nov 09:41</strong></div>
+          <div class="slip-row"><span>Ahead:</span> <strong id="slipAhead">2 Patients</strong></div>
+        </div>
+
+        <div class="slip-barcode-sim"></div>
+        <div style="font-size: 10px; color: var(--color-slate-400); margin-bottom: 12px;">Scan at kiosk or track at hqms.hospital/track</div>
+
+        <button class="btn-primary" onclick="closeThermalSlip()" style="height: 38px; font-size: 13px;">
+          Close & Print
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // In-memory simulation state aligned 100% to contract d15be09
+    const state = {
+      activeToken: null, // e.g. 'A-012'
+      tokens: [
+        { id: 'tok_001', number: 'A-012', patientName: 'Rahul Verma', uhid: 'UHID-1001', status: 'WAITING', department: 'General Medicine', room: 'Room 2' },
+        { id: 'tok_002', number: 'A-013', patientName: 'Priya Patel', uhid: 'UHID-1002', status: 'WAITING', department: 'General Medicine', room: 'Room 2' }
+      ],
+      tokenCounter: 14,
+      currentView: 'receptionist',
+      viewportWidth: '390px'
+    };
+
+    function switchView(viewName) {
+      state.currentView = viewName;
+      document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+      document.querySelectorAll('.dock-btn').forEach(b => b.classList.remove('active'));
+      
+      const targetScreen = document.getElementById('view-' + viewName);
+      if (targetScreen) targetScreen.classList.add('active');
+
+      // Highlight active button
+      const buttons = document.querySelectorAll('.prototype-dock .dock-btn');
+      if (viewName === 'receptionist') buttons[0].classList.add('active');
+      if (viewName === 'doctor') buttons[1].classList.add('active');
+      if (viewName === 'patient') buttons[2].classList.add('active');
+      if (viewName === 'tv') buttons[3].classList.add('active');
+
+      render();
+    }
+
+    function toggleViewportSize() {
+      const frame = document.getElementById('viewportFrame');
+      const btn = event.target;
+      if (frame.classList.contains('tablet')) {
+        frame.classList.remove('tablet');
+        btn.textContent = '390px';
+      } else {
+        frame.classList.add('tablet');
+        btn.textContent = '768px';
+      }
+    }
+
+    function lookupPatient() {
+      const input = document.getElementById('patientLookupInput').value.trim();
+      const box = document.getElementById('patientDetailsBox');
+      if (input === 'UHID-1001') {
+        box.innerHTML = `
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <strong style="font-size: 14px; color: var(--color-slate-900);">Rahul Verma</strong>
+              <div style="font-size: 12px; color: var(--color-slate-600);">34 Y / Male • +91 98765 43210</div>
+            </div>
+            <span class="token-badge" style="background: #E0F2FE; color: #0369A1; border: none;">VERIFIED</span>
+          </div>`;
+      } else {
+        box.innerHTML = `
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <strong style="font-size: 14px; color: var(--color-slate-900);">New Walk-in Patient</strong>
+              <div style="font-size: 12px; color: var(--color-slate-600);">Unregistered record</div>
+            </div>
+            <span class="token-badge" style="background: #FEF3C7; color: #B45309; border: none;">NEW</span>
+          </div>`;
+      }
+    }
+
+    function issueWalkInToken() {
+      const num = 'A-0' + (state.tokenCounter++);
+      const newToken = {
+        id: 'tok_' + Date.now(),
+        number: num,
+        patientName: 'Rahul Verma',
+        uhid: 'UHID-1001',
+        status: 'WAITING',
+        department: 'General Medicine',
+        room: 'Room 2'
+      };
+      state.tokens.push(newToken);
+
+      // Open Thermal Slip Modal
+      document.getElementById('slipToken').textContent = num;
+      document.getElementById('slipDept').textContent = 'General Medicine • Room 2';
+      document.getElementById('slipPatient').textContent = newToken.patientName;
+      document.getElementById('slipUhid').textContent = newToken.uhid;
+      document.getElementById('slipDateTime').textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      document.getElementById('slipAhead').textContent = (state.tokens.filter(t => t.status === 'WAITING').length - 1) + ' Patients';
+      
+      document.getElementById('thermalModal').classList.add('active');
+      render();
+    }
+
+    function closeThermalSlip() {
+      document.getElementById('thermalModal').classList.remove('active');
+    }
+
+    function doctorCallNext() {
+      if (state.activeToken) {
+        // Complete current
+        const curr = state.tokens.find(t => t.number === state.activeToken);
+        if (curr) curr.status = 'COMPLETED';
+        state.activeToken = null;
+      } else {
+        // Call next waiting token
+        const next = state.tokens.find(t => t.status === 'WAITING');
+        if (next) {
+          next.status = 'IN_CONSULTATION';
+          state.activeToken = next.number;
+        } else {
+          alert('No more eligible patients waiting in queue.');
+        }
+      }
+      render();
+    }
+
+    function render() {
+      // 1. Receptionist list
+      const recList = document.getElementById('receptionistQueueList');
+      recList.innerHTML = state.tokens.slice(-3).reverse().map(t => `
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: var(--color-slate-50); border-radius: var(--radius-sm); border: 1px solid var(--color-slate-200);">
+          <div>
+            <span class="token-badge ${t.status === 'IN_CONSULTATION' ? 'called' : ''}">${t.number}</span>
+            <span style="font-size: 13px; font-weight: 500; margin-left: 8px;">${t.patientName}</span>
+          </div>
+          <span style="font-size: 11px; font-weight: 600; color: ${t.status === 'IN_CONSULTATION' ? 'var(--color-cyan)' : 'var(--color-slate-600)'};">${t.status}</span>
+        </div>
+      `).join('');
+
+      // 2. Doctor console
+      const docArea = document.getElementById('docActivePatientArea');
+      const docBtn = document.getElementById('docPrimaryActionBtn');
+      const docStatus = document.getElementById('docCurrentStatusBadge');
+
+      if (state.activeToken) {
+        const curr = state.tokens.find(t => t.number === state.activeToken);
+        docStatus.textContent = 'CONSULTING';
+        docStatus.className = 'token-badge called';
+        docArea.innerHTML = `
+          <div class="token-badge called" style="font-size: 32px; padding: 6px 20px; margin-bottom: 6px;">${curr.number}</div>
+          <div style="font-size: 16px; font-weight: 700; color: var(--color-navy);">${curr.patientName}</div>
+          <div style="font-size: 12px; color: var(--color-slate-600);">${curr.uhid} • General Medicine</div>
+        `;
+        docBtn.textContent = 'Complete Consultation';
+        docBtn.className = 'btn-primary btn-success';
+      } else {
+        docStatus.textContent = 'IDLE';
+        docStatus.className = 'token-badge';
+        docArea.innerHTML = `
+          <div style="font-size: 12px; color: var(--color-slate-400);">No patient currently called</div>
+          <div style="font-size: 15px; font-weight: 600; color: var(--color-slate-600); margin-top: 4px;">Press "Call Next Patient" to start</div>
+        `;
+        docBtn.textContent = 'Call Next Patient';
+        docBtn.className = 'btn-primary btn-teal';
+      }
+
+      const waitingTokens = state.tokens.filter(t => t.status === 'WAITING');
+      document.getElementById('waitingCountBadge').textContent = waitingTokens.length + ' Waiting';
+      document.getElementById('doctorWaitingList').innerHTML = waitingTokens.length > 0 
+        ? waitingTokens.map(t => `
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: var(--color-slate-50); border-radius: var(--radius-sm); border: 1px solid var(--color-slate-200);">
+              <span class="token-badge">${t.number}</span>
+              <span style="font-size: 13px; font-weight: 500;">${t.patientName}</span>
+              <span style="font-size: 11px; color: var(--color-slate-400);">Estimated 10m</span>
+            </div>
+          `).join('')
+        : '<div style="font-size: 12px; color: var(--color-slate-400); text-align: center; padding: 10px;">Queue is clear</div>';
+
+      // 3. Patient Tracker
+      if (state.activeToken === 'A-012') {
+        document.getElementById('trackerPosNum').textContent = 'NOW';
+        document.getElementById('trackerStatusText').textContent = 'Please Enter Room 2';
+      } else {
+        const myIndex = waitingTokens.findIndex(t => t.number === 'A-012');
+        if (myIndex !== -1) {
+          document.getElementById('trackerPosNum').textContent = (myIndex + 1);
+          document.getElementById('trackerStatusText').textContent = myIndex === 0 ? "You're Up Next!" : 'Waiting in Queue';
+        }
+      }
+
+      // 4. TV Board
+      document.getElementById('tvActiveToken').textContent = state.activeToken || '---';
+      document.getElementById('tvActiveRoom').textContent = state.activeToken ? 'Proceed to Room 2' : 'Doctor Room Available';
+      document.getElementById('tvUpcomingList').innerHTML = waitingTokens.slice(0, 3).map((t, idx) => `
+        <div class="tv-upcoming-row">
+          <span style="font-family: var(--font-mono); font-size: 16px; font-weight: 700; color: #38BDF8;">${t.number}</span>
+          <span style="font-size: 13px; color: #CBD5E1;">Position ${idx + 1}</span>
+          <span style="font-size: 12px; color: #64748B;">Waiting</span>
+        </div>
+      `).join('') || '<div style="color: #64748B; font-size: 13px; text-align: center;">No upcoming patients</div>';
+    }
+
+    // Run initial render
+    render();
+    setInterval(() => {
+      const clock = document.getElementById('tvClock');
+      if (clock) clock.textContent = new Date().toLocaleTimeString();
+    }, 1000);
+  </script>
+</body>
+</html>

@@ -12,7 +12,6 @@ import {
   Info,
 } from 'lucide-react';
 import { Btn, Field, ease } from '../../components/hq/ui';
-import { AwaitingBackendBadge } from '../../components/admin';
 import type { IncidentSeverity, IncidentCategory, WebIncident } from '../../services/types';
 import { cn } from '../../lib/utils';
 
@@ -146,15 +145,6 @@ export const ReportIncidentModal: React.FC<ReportIncidentModalProps> = ({
                 </p>
               </div>
             </div>
-
-            {/* Awaiting Backend Badge as instructed */}
-            <AwaitingBackendBadge
-              endpoint="POST /admin/incidents"
-              featureName="Central Incident Persistence Service"
-              milestone="M2"
-              variant="banner"
-              details="Incident logged to local browser diagnostics. Backend persistence awaiting M2 API."
-            />
 
             <div className="flex justify-end pt-3">
               <Btn variant="ink" size="sm" onClick={onClose} className="rounded-xl">

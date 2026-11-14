@@ -294,17 +294,6 @@ export const DepartmentManager: React.FC<DepartmentManagerProps> = ({
         }
       />
 
-      {/* Staged Staff Provisioning Warning / Notice */}
-      <div className="pt-2">
-        <AwaitingBackendBadge
-          endpoint="POST /admin/departments/:id/receptionists"
-          featureName="Specialty Wing Reception Staff Provisioning"
-          milestone="M2"
-          variant="banner"
-          details="Department-specific receptionist desk account binding and credential generation will automatically connect when M2 deploys the receptionist provisioning contract."
-        />
-      </div>
-
       {/* Add Department Modal */}
       {isAddModalOpen && (
         <div
@@ -478,12 +467,6 @@ export const DepartmentManager: React.FC<DepartmentManagerProps> = ({
               <p className="text-xs text-muted-foreground">
                 Reception counters in this wing operate with default hospital staff allocation.
               </p>
-              <AwaitingBackendBadge
-                endpoint="POST /admin/departments/:id/receptionists"
-                featureName="Specialty Reception Accounts"
-                milestone="M2"
-                variant="pill"
-              />
             </div>
           </div>
         )}

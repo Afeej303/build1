@@ -16,7 +16,7 @@ import {
   RotateCcw,
   ExternalLink,
 } from 'lucide-react';
-import { PageHeader, StatCard, QueryErrorState, AwaitingBackendBadge } from '../../components/admin';
+import { PageHeader, StatCard, QueryErrorState } from '../../components/admin';
 import { Btn, minutesAgo, ease } from '../../components/hq/ui';
 import { apiClient, type ApiHealthStatus } from '../../lib/api-client';
 import { superAdminService } from '../../services/superAdminService';
@@ -233,17 +233,8 @@ export function PlatformOverview({ onNavigate }: PlatformOverviewProps) {
               )}
               <div className="flex items-center justify-between py-1.5">
                 <span className="text-muted-foreground">Architecture Version</span>
-                <span className="font-mono font-medium text-foreground">M1 Multi-Tenant Core</span>
+                <span className="font-mono font-medium text-foreground">HQMS Enterprise Core</span>
               </div>
-            </div>
-
-            <div className="pt-2">
-              <AwaitingBackendBadge
-                variant="chip"
-                endpoint="GET /admin/metrics/prometheus"
-                featureName="Prometheus Metrics Gateway"
-                milestone="M2"
-              />
             </div>
           </div>
 
