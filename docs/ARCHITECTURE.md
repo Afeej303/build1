@@ -71,3 +71,7 @@ Never include real secrets.
 | From | Depends on | Contract / mechanism | Owner(s) | Risk / fallback |
 |---|---|---|---|---|
 | Enhancement [EF-XX] | MVP service | [TODO] | M2 + M3 | [TODO] |
+
+## Backend starter mapping
+
+M2's NestJS app lives in `backend/src`, with Prisma schema and migrations in `backend/prisma`. Browser sign-in uses Supabase Auth and protected API calls carry the access token. NestJS verifies identity and checks database-backed assignments before reading or mutating queue data.

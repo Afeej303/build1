@@ -136,3 +136,7 @@ Start with configurable polling at 5 seconds for staff and public views and 10 s
 - Competing call-next requests leave a single active token and the other request receives a conflict code.
 - A patient can restore their active token after reload. Another patient receives 404 with `TOKEN_NOT_FOUND` for that token.
 - A public QR opens `/display/board/:publicQueueId` and loads the queue display without sign-in and exposes no private token or patient details.
+
+## First workflow ordering
+
+Call the oldest eligible waiting token first, ordered by issue time then a unique database-generated sequence. The waiting list and call-next operation use the same ordering. Priority override behavior remains open for team confirmation.

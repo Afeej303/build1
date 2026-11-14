@@ -50,3 +50,7 @@ Update this document as components become available and are tested together.
 - **Ready journeys:** [TODO]
 - **Unready journeys:** [TODO]
 - **Fallback if a live integration fails:** [TODO]
+
+## First walk-in workflow verification
+
+The NestJS backend passed a local HTTP smoke test against the shared build1 Supabase test project with four real synthetic Auth accounts. Verified receptionist lookup and issuance, duplicate check-in, doctor scope and dashboard, concurrent call-next, completion, private patient tracking, and public response fields. The test accounts and fixture records were removed after verification. Hosted API verification and frontend integration are pending.
