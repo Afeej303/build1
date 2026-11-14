@@ -1,74 +1,198 @@
-# Project Brief and Scope
+# Hospital Queue Management System
 
-> Replace every `[TODO]` before implementation. Keep this document concise and specific.
+## Project Overview
 
-## 1. Project identity
+**Project name:** Hospital Queue Management System
 
-- **Project name:** [TODO]
-- **Practice topic/problem statement:** [TODO]
-- **Date / event:** [TODO]
-- **Repository:** [TODO]
-- **Team:** M1 (Frontend), M2 (Backend), M3 (Features)
+**Project category:** Healthcare / Queue Management / Digital Hospital Administration
 
-## 2. Problem
+### Objective
+Develop a digital hospital queue management platform that simplifies appointment scheduling, patient registration, token generation, queue monitoring, doctor availability management, emergency prioritization, and overall hospital operations. The system aims to reduce unnecessary waiting, improve patient flow, provide real-time queue visibility, and help hospital staff manage multiple departments efficiently.
 
-### Problem statement
-[Describe the problem in a few precise sentences.]
+### Problem Statement
+Traditional hospital queue systems suffer from:
+- Long and unpredictable waiting times.
+- Physical queues and overcrowded waiting areas.
+- Poor communication about appointment delays.
+- Difficulty coordinating multiple doctors and departments.
+- Lack of transparency in queue positions.
+- Inefficient handling of emergency and priority patients.
+- Manual appointment modifications and token management.
 
-### Who experiences it?
-[Identify primary users, stakeholders and affected groups.]
+### Proposed Solution
+A centralized digital platform connecting patients, doctors, receptionists, and administrators. Features include:
+- Patients can book appointments, register as walk‑ins, receive tokens, and track their queue status.
+- Doctors can manage their queues and availability.
+- Receptionists can manage registrations and appointments.
+- Administrators can monitor hospital‑wide operations and configure queue policies.
 
-### Current workaround
-[How do users solve this today? What is inadequate?]
+## System Users and Roles
 
-### Evidence and assumptions
-- Evidence: [TODO]
-- Assumptions requiring validation: [TODO]
+| User | Responsibilities |
+|------|-------------------|
+| Patient | Register, book appointments, track queues |
+| Doctor | Manage availability, handle patients, process queues |
+| Receptionist | Register patients, manage appointments and tokens |
+| Admin | Manage hospital operations, staff, departments, configurations |
+| Public visitor | View queue status without authentication |
 
-## 3. Proposed solution
+## MVP Feature List
 
-[Explain what the product does, for whom, and how it addresses the problem.]
+### A. Patient Management
+- Patient registration and login.
+- Guest registration.
+- Patient profile management.
+- Unique patient ID.
+- QR‑based patient identification.
+- Multiple dependents/family members.
 
-## 4. User roles and core journeys
+### B. Appointment Management
+- Appointment booking.
+- Walk‑in registration.
+- Appointment scheduling.
+- Automatic incremental rescheduling.
+- Appointment cancellation.
+- Doctor availability and slot management.
+- Telegram appointment reminders.
+- In‑app appointment reminders.
+- Booking confirmation.
+- Token confirmation.
 
-| User role | Goal | Main journey |
-|---|---|---|
-| [TODO] | [TODO] | [TODO] |
+### C. Queue and Token Management
+- Automatic token generation.
+- Department‑wise queues.
+- Doctor‑wise queues.
+- Live queue status.
+- Current token display.
+- Estimated waiting time.
+- Next‑token prediction.
+- Patient queue‑position tracking.
+- Token cancellation.
+- Missed‑token handling.
+- Queue transfer.
+- Skip patient.
+- Consultation duration tracking.
+- Multi‑department tracking.
+- Queue progress visualization.
 
-## 5. MVP scope
+### D. Doctor Dashboard
+- Doctor authentication.
+- Today's appointments.
+- Current patient display.
+- Call next patient.
+- Mark consultation completed.
+- Skip patient.
+- Consultation duration tracking.
+- Doctor availability status.
+- Break management.
 
-### Must have
-- [ ] [Feature + measurable outcome]
-- [ ] [Feature + measurable outcome]
+### E. Receptionist Dashboard
+- Walk‑in patient registration.
+- Token generation.
+- View all queues.
+- Doctor assignment.
+- Modify appointments.
+- Cancel tokens.
+- Reassign tokens.
+- Patient search.
+- Print token slips.
 
-### Should have, if time permits
-- [ ] [TODO]
+### F. Admin Dashboard
+- Admin authentication.
+- Manage departments.
+- Manage doctors.
+- Manage staff.
+- Configure queues.
+- Monitor all departments.
+- Manage hospital timings.
+- Configure priority rules.
+- Audit logs.
 
-### Explicitly out of scope
-- [ ] [TODO]
+### G. Live Queue Tracking
+- QR‑based queue tracking.
+- Public queue‑status access.
+- Current serving token.
+- Number of patients ahead.
+- Estimated waiting time.
+- Live queue display.
+- Digital waiting‑room screen.
+- Multi‑department tracking.
+- Queue progress visualization.
 
-## 6. Acceptance criteria
+### H. Notifications and Communication
+- Token confirmation.
+- Telegram notifications.
+- In‑app notifications.
+- Doctor delay notification.
+- Turn approaching alert.
+- Emergency announcements.
 
-| ID | Requirement | Acceptance test / observable result | Priority |
-|---|---|---|---|
-| AC-01 | [TODO] | [TODO] | Must |
+### I. Emergency and Priority Management
+- Emergency registration.
+- Emergency priority.
+- Triage classification.
+- Senior citizen priority.
+- Pregnancy priority.
+- Manual priority override (audit trail).
 
-A feature is not complete merely because a screen or endpoint exists. It must satisfy its acceptance criteria and relevant tests.
+### J. Analytics and Reporting
+- Daily patient count.
+- Department statistics.
+- Average waiting time.
+- Export reports (CSV/PDF).
 
-## 7. Constraints
+### K. Platform
+- Progressive Web App (PWA) support.
 
-- **Time limit:** [TODO]
-- **Required technologies:** [TODO / none]
-- **Deployment/demo environment:** [TODO]
-- **Budget/API constraints:** [TODO]
-- **Privacy/security constraints:** [TODO]
+## Enhancement Features (M3)
 
-## 8. Success criteria
+| No. | Feature | Description |
+|-----|---------|-------------|
+| 1 | QR self check‑in | Scan QR to confirm physical hospital arrival |
+| 2 | AI waiting‑time prediction | Predict waiting time using historical data |
+| 3 | Smart doctor assignment | Recommend doctors based on availability and workload |
+| 4 | Dynamic queue optimization | Optimize queue distribution |
+| 5 | Voice announcements | Automatically announce tokens |
+| 6 | Malayalam voice assistance | Voice‑guided patient interaction |
+| 7 | Multilingual interface | Malayalam, English and other languages |
+| 8 | Offline registration | Registration during internet outages |
+| 9 | Hospital navigation | Guide patients to departments |
+|10 | Digital prescriptions | Store and retrieve prescriptions |
+|11 | Pharmacy queue | Manage medicine collection |
+|12 | Laboratory queue | Manage sample collection |
+|13 | Billing queue | Manage payment counters |
+|14 | Patient feedback | Collect patient satisfaction ratings |
+|15 | Feedback analytics | Identify service bottlenecks |
 
-[Define what a successful demo or MVP must demonstrate.]
+*Select 2–3 enhancements before development begins.*
 
-## 9. Open questions
+## Architecture Overview
 
-| Question | Owner | Due / priority | Resolution |
-|---|---|---|---|
-| [TODO] | [M1/M2/M3] | [TODO] | Open |
+**Components**
+- User interfaces: Patient, Doctor, Receptionist, Admin, Public display.
+- Backend API & Authentication: Authorization, Validation, Business logic.
+- Queue Engine: Tokens, Priority, Scheduling.
+- Notification Engine: Telegram, In‑app alerts.
+- Analytics Engine: Reports, Statistics.
+- Database: Patients, Appointments, Queues.
+
+*Logical architecture; preserve existing technical decisions in the repository.*
+
+## Development Structure
+
+| Member | Role | Ownership |
+|--------|------|-----------|
+| M1 | Frontend Developer | `frontend/` |
+| M2 | Backend / Main Developer | `backend/` |
+| M3 | Enhancements | `enhancements/` |
+
+## Open Questions (TBD)
+- Automatic rescheduling triggers and patient confirmation workflow.
+- Priority ordering rules and tie‑breaking logic.
+- Senior citizen eligibility threshold.
+- Authorized triage categories.
+- Telegram bot configuration details.
+- Waiting‑time calculation methodology.
+- Exact report export formats (CSV vs PDF specifics).
+
+*Mark these as open in `docs/EXTRA-FEATURE-PLAN.md` and resolve before implementation.*
