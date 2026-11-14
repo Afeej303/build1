@@ -16,7 +16,7 @@
 | P-01 | Inspect starter project and map actual structure | M2 + M3 | High | Ready | Stack, paths and constraints documented |
 | P-02 | Define MVP boundary and acceptance criteria | All | High | Ready | `PROJECT.md` agreed |
 | P-03 | Select M3 extra features | All; M3 documents | High | Ready | `EXTRA-FEATURE-PLAN.md` approved before coding |
-| P-04 | Agree architecture and API contracts | M1 + M2; M3 consulted | High | Ready | `ARCHITECTURE.md` and `API-CONTRACT.md` usable |
+| P-04 | Agree architecture and API contracts | M1 + M2; M3 consulted | High | In progress | `ARCHITECTURE.md` and `API-CONTRACT.md` usable. First queue contract drafted for M1 review. |
 | P-05 | Document database/data model | M2 | High | Ready | `DATABASE-SCHEMA.md` matches MVP plan |
 
 ## Implementation tasks
