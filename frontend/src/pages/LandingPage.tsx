@@ -6,14 +6,8 @@ import {
   ArrowRight,
   Calendar,
   Radio,
-  ShieldCheck,
   CheckCircle2,
   Clock,
-  User,
-  Lock,
-  Stethoscope,
-  Tv,
-  Building2,
   Search,
   ExternalLink,
 } from 'lucide-react';
@@ -24,7 +18,7 @@ import { useAuth } from '../lib/auth';
 
 export const LandingPage: React.FC = () => {
   const navigate = useNavigate();
-  const { session, profile, isDoctor, isReceptionist, isSuperAdmin, isHospitalAdmin } = useAuth();
+  const { session } = useAuth();
   const [tokenInput, setTokenInput] = useState('');
 
   // Poll live backend queue status (zero-PII, unauthenticated public view)
@@ -55,47 +49,12 @@ export const LandingPage: React.FC = () => {
           <div className="flex items-center gap-3">
             {session ? (
               <div className="flex items-center gap-2">
-                {isSuperAdmin && (
-                  <Link
-                    to="/admin"
-                    className="press inline-flex items-center gap-1.5 rounded-full bg-slate-900 text-white px-4 py-2 text-xs font-semibold hover:bg-slate-800 transition-colors"
-                  >
-                    <span>Super Admin</span>
-                    <ArrowRight size={13} />
-                  </Link>
-                )}
-                {isHospitalAdmin && !isSuperAdmin && (
-                  <Link
-                    to="/hospital-admin"
-                    className="press inline-flex items-center gap-1.5 rounded-full bg-slate-900 text-white px-4 py-2 text-xs font-semibold hover:bg-slate-800 transition-colors"
-                  >
-                    <span>Hospital Admin</span>
-                    <ArrowRight size={13} />
-                  </Link>
-                )}
-                {isDoctor && (
-                  <Link
-                    to="/consultation"
-                    className="press inline-flex items-center gap-1.5 rounded-full bg-slate-900 text-white px-4 py-2 text-xs font-semibold hover:bg-slate-800 transition-colors"
-                  >
-                    <span>Doctor Console</span>
-                    <ArrowRight size={13} />
-                  </Link>
-                )}
-                {isReceptionist && (
-                  <Link
-                    to="/intake"
-                    className="press inline-flex items-center gap-1.5 rounded-full bg-slate-900 text-white px-4 py-2 text-xs font-semibold hover:bg-slate-800 transition-colors"
-                  >
-                    <span>Reception Intake</span>
-                    <ArrowRight size={13} />
-                  </Link>
-                )}
                 <Link
                   to="/track"
-                  className="press inline-flex items-center gap-1.5 rounded-full border border-slate-200 text-slate-700 hover:bg-slate-50 px-4 py-2 text-xs font-medium transition-colors"
+                  className="press inline-flex items-center gap-1.5 rounded-full bg-[#0F172A] hover:bg-slate-800 text-white px-5 py-2 text-xs font-semibold shadow-xs transition-colors"
                 >
-                  <span>My Token</span>
+                  <span>My Token & Appointments</span>
+                  <ArrowRight size={13} />
                 </Link>
               </div>
             ) : (
@@ -275,105 +234,28 @@ export const LandingPage: React.FC = () => {
         </div>
       </section>
 
-      {/* 5. Clinical Workstations & Administrative Portals */}
-      <section className="py-14 sm:py-18 bg-white border-b border-slate-100">
+      {/* 5. Patient Information & Care Support */}
+      <section className="py-12 sm:py-16 bg-slate-50 border-b border-slate-100">
         <div className="max-w-6xl mx-auto px-6 sm:px-10">
-          <div className="text-center max-w-xl mx-auto mb-10">
-            <p className="text-xs font-semibold text-blue-600 uppercase tracking-widest mb-1.5">
-              Clinical Workstations
-            </p>
-            <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
-              Healthcare Operations Suite
-            </h2>
-            <p className="text-sm text-slate-500 mt-2">
-              Isolated, role-based workstations engineered for hospital clinical teams.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {/* Workstation 1: Reception Intake */}
-            <Link
-              to="/intake"
-              className="group p-5 rounded-2xl border border-slate-200/80 bg-white hover:border-blue-400 hover:shadow-md transition-all cursor-pointer flex flex-col justify-between"
-            >
-              <div>
-                <div className="size-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center mb-4 group-hover:scale-105 transition-transform">
-                  <User className="size-5" />
-                </div>
-                <h3 className="font-semibold text-sm text-slate-900 group-hover:text-blue-600 transition-colors">
-                  Reception Intake Desk
-                </h3>
-                <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                  Fast patient registration, UHID lookup, walk-in token and thermal slip issuance.
-                </p>
-              </div>
-              <span className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 mt-4">
-                Launch Desk <ArrowRight size={12} className="group-hover:translate-x-1 transition-transform" />
-              </span>
-            </Link>
-
-            {/* Workstation 2: Doctor Clinical Station */}
-            <Link
-              to="/consultation"
-              className="group p-5 rounded-2xl border border-slate-200/80 bg-white hover:border-emerald-400 hover:shadow-md transition-all cursor-pointer flex flex-col justify-between"
-            >
-              <div>
-                <div className="size-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center mb-4 group-hover:scale-105 transition-transform">
-                  <Stethoscope className="size-5" />
-                </div>
-                <h3 className="font-semibold text-sm text-slate-900 group-hover:text-emerald-600 transition-colors">
-                  Doctor Consultation
-                </h3>
-                <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                  Call next patient, view active queue, inspect appointments, and record completions.
-                </p>
-              </div>
-              <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 mt-4">
-                Launch Console <ArrowRight size={12} className="group-hover:translate-x-1 transition-transform" />
-              </span>
-            </Link>
-
-            {/* Workstation 3: Public Display Board */}
-            <Link
-              to="/display"
-              className="group p-5 rounded-2xl border border-slate-200/80 bg-white hover:border-purple-400 hover:shadow-md transition-all cursor-pointer flex flex-col justify-between"
-            >
-              <div>
-                <div className="size-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center mb-4 group-hover:scale-105 transition-transform">
-                  <Tv className="size-5" />
-                </div>
-                <h3 className="font-semibold text-sm text-slate-900 group-hover:text-purple-600 transition-colors">
-                  Waiting Room TV Board
-                </h3>
-                <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                  Zero-PII high-visibility public waiting room display with audio calling chimes.
-                </p>
-              </div>
-              <span className="inline-flex items-center gap-1 text-xs font-semibold text-purple-600 mt-4">
-                Open Signage <ArrowRight size={12} className="group-hover:translate-x-1 transition-transform" />
-              </span>
-            </Link>
-
-            {/* Workstation 4: Hospital Admin Operations */}
-            <Link
-              to="/hospital-admin"
-              className="group p-5 rounded-2xl border border-slate-200/80 bg-white hover:border-rose-400 hover:shadow-md transition-all cursor-pointer flex flex-col justify-between"
-            >
-              <div>
-                <div className="size-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center mb-4 group-hover:scale-105 transition-transform">
-                  <Building2 className="size-5" />
-                </div>
-                <h3 className="font-semibold text-sm text-slate-900 group-hover:text-rose-600 transition-colors">
-                  Hospital Facility Admin
-                </h3>
-                <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                  Manage departments, queues, doctor schedules, counters, and diagnostic incidents.
-                </p>
-              </div>
-              <span className="inline-flex items-center gap-1 text-xs font-semibold text-rose-600 mt-4">
-                Admin Console <ArrowRight size={12} className="group-hover:translate-x-1 transition-transform" />
-              </span>
-            </Link>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div className="space-y-2">
+              <h3 className="font-semibold text-sm text-slate-900">Arriving at the Clinic</h3>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Check in at the lobby kiosks or with our hospital welcoming staff upon arrival to receive your live digital ticket.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <h3 className="font-semibold text-sm text-slate-900">Live Status Tracking</h3>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Keep your phone on to track your place in line live. You will receive an SMS reminder when you are 3 turns away.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <h3 className="font-semibold text-sm text-slate-900">Assistance & Support</h3>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Elderly care, wheelchair assistance, and multilingual support are available at the main hospital reception desk.
+              </p>
+            </div>
           </div>
         </div>
       </section>
@@ -384,17 +266,12 @@ export const LandingPage: React.FC = () => {
           <div className="flex items-center gap-2">
             <span className="font-semibold text-slate-700">HQMS</span>
             <span>•</span>
-            <span>City General Hospital Queue System</span>
+            <span>City General Hospital Patient Portal</span>
           </div>
 
           <div className="flex items-center gap-6">
-            <Link to="/staff-login" className="hover:text-slate-600 transition-colors flex items-center gap-1">
-              <Lock size={12} />
-              <span>Staff Login</span>
-            </Link>
-            <Link to="/admin" className="hover:text-slate-600 transition-colors">
-              Platform Super Admin
-            </Link>
+            <span>Hospital Support: 1-800-HQMS-CARE</span>
+            <span>Emergency: Dial 108</span>
           </div>
         </div>
       </footer>

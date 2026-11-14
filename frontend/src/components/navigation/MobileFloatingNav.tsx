@@ -30,7 +30,7 @@ export const MobileFloatingNav: React.FC = () => {
   // Determine active item from current route
   const currentPath = location.pathname;
 
-  // Construct adaptive navigation items tailored to the user role
+  // Construct adaptive navigation items tailored to the user role (MUST be before any early return!)
   const navItems: NavItem[] = React.useMemo(() => {
     if (session) {
       if (isSuperAdmin) {
@@ -77,6 +77,7 @@ export const MobileFloatingNav: React.FC = () => {
   }, [session, isDoctor, isReceptionist, isSuperAdmin, isHospitalAdmin]);
 
   // Hide on landing page, display signage, and admin consoles (admin handles its own floating section dock)
+  // Evaluated AFTER all React hooks are registered to satisfy Rules of Hooks
   if (
     location.pathname === '/' ||
     location.pathname.startsWith('/display') ||
