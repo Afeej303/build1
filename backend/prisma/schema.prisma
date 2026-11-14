@@ -383,6 +383,7 @@ model ReceptionAssignment {
 }
 
 model Patient {
+  isDependent Boolean @default(false)
   id          String       @id @default(uuid()) @db.Uuid
   hospitalId  String       @db.Uuid
   userId      String?      @db.Uuid

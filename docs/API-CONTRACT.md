@@ -262,3 +262,15 @@ Send `{ queueId }` to `POST /queue-tokens/{tokenId}/transfer`. Reception must be
 ### Daily hospital reports
 
 Authorized administrators can retrieve `GET /admin/hospitals/{hospitalId}/report?date=YYYY-MM-DD` or download its department totals from `GET /admin/hospitals/{hospitalId}/report.csv?date=YYYY-MM-DD`. The report uses Asia/Kolkata calendar days. The JSON response includes the unique patient count and each department's token count, completed count, and average minutes from issuance to call. The CSV uses department IDs. The reports contain aggregate data.
+
+### Dependent profiles
+
+Register your own profile at the hospital with `POST /patients/self`, then send `{ hospitalId, displayName }` to `POST /patients/dependents`. Each successful request creates a dependent with its own UHID. `GET /users/me/patients` lists the primary and dependent profiles with an `isDependent` flag. Use the existing profile PATCH endpoint to add demographic details to an owned dependent.
+
+Pass the selected dependent's `patientId` with `slotId` to `POST /appointments`. Omitting `patientId` selects only the primary profile. The server checks account ownership or reception assignment and the slot's hospital. The existing owned appointment and token lists include dependents.
+
+### Signup confirmation in the test project
+
+Use Supabase email/password signup. If Supabase returns a session, continue to onboarding immediately. If the session is null, show the email confirmation prompt. On the build1 test project, turning off **Confirm email** in the Supabase Email provider avoids sending a signup confirmation email. This dashboard setting is separate from the backend migration. Password recovery still sends email.
+
+For patient identification, render a QR containing only the patient's UHID. Reception scans it into the existing `GET /staff/patients/lookup?patientNumber=...` flow and verifies the returned name. The QR carries no demographic information and grants no access by itself.

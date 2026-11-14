@@ -1,0 +1,1 @@
+ALTER TABLE "Patient" ADD COLUMN "isDependent" BOOLEAN NOT NULL DEFAULT false;

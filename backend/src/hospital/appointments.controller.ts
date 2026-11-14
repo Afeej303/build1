@@ -75,6 +75,7 @@ class UpdatePatientProfile {
 }
 
 const patientProfile = {
+  isDependent: true,
   id: true,
   hospitalId: true,
   patientNumber: true,
@@ -276,6 +277,34 @@ export class AppointmentsController {
     };
   }
 
+  @Post('patients/dependents')
+  async registerDependent(
+    @CurrentUser('id') userId: string,
+    @Body() body: RegisterPatient,
+  ) {
+    const displayName = body.displayName.trim();
+    if (!displayName) throw new BadRequestException('Display name is required');
+    const primary = await this.db.patient.findFirst({
+      where: { userId, hospitalId: body.hospitalId, isDependent: false },
+      select: { id: true },
+    });
+    if (!primary)
+      throw new NotFoundException({
+        code: 'PATIENT_NOT_FOUND',
+        message: 'Register your own profile at this hospital first',
+      });
+    return this.db.patient.create({
+      data: {
+        userId,
+        hospitalId: body.hospitalId,
+        displayName,
+        isDependent: true,
+        patientNumber: 'UHID-' + randomUUID(),
+      },
+      select: patientProfile,
+    });
+  }
+
   @Post('patients/self')
   async registerPatient(
     @CurrentUser('id') userId: string,
@@ -301,7 +330,7 @@ export class AppointmentsController {
           message: 'Hospital not found',
         });
       }
-      const where = { userId, hospitalId: body.hospitalId };
+      const where = { userId, hospitalId: body.hospitalId, isDependent: false };
       const select = {
         id: true,
         hospitalId: true,
@@ -509,16 +538,21 @@ export class AppointmentsController {
             ...(body.patientId
               ? {
                   id: body.patientId,
-                  hospital: {
-                    departments: {
-                      some: {
-                        id: slot.queue.departmentId,
-                        receptionists: { some: { userId } },
+                  OR: [
+                    { userId },
+                    {
+                      hospital: {
+                        departments: {
+                          some: {
+                            id: slot.queue.departmentId,
+                            receptionists: { some: { userId } },
+                          },
+                        },
                       },
                     },
-                  },
+                  ],
                 }
-              : { userId }),
+              : { userId, isDependent: false }),
           },
           select: { id: true },
           take: 2,
@@ -553,13 +587,16 @@ export class AppointmentsController {
           data: { slotId: slot.id, patientId: patients[0].id },
           include: appointmentDetails,
         });
+        const ownsPatient = await tx.patient.count({
+          where: { id: patientId, userId },
+        });
         await tx.hospitalActivity.create({
           data: {
             departmentId: slot.queue.departmentId,
             actorId: userId,
             action: 'APPOINTMENT_BOOKED',
             appointmentId: created.id,
-            source: body.patientId ? 'RECEPTION' : 'ONLINE',
+            source: ownsPatient ? 'ONLINE' : 'RECEPTION',
           },
         });
         return appointmentView(created);
