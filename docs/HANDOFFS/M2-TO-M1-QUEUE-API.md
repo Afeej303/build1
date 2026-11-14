@@ -30,3 +30,7 @@ Documentation draft only. The build1 backend exposes no endpoints yet.
 ## Decisions needed from M1
 
 Confirm the fields and errors needed by the receptionist, doctor, patient, and waiting-room screens. Flag whether the first demo needs a registration screen or can use seeded patients. Agree with M2 on staff scope discovery and queue refresh before wiring frontend mocks to the contract.
+
+## Follow-up after M1 review
+
+The [contract revision](../API-CONTRACT.md#revision-for-m1-review) proposes all requested discovery and read interfaces, token slip fields, public QR behavior, errors, and polling defaults. Please compare the acceptance checks with your frontend criteria. Confirm exact patient-number lookup, doctor patient display fields, staff scoping, and the public frontend route before we freeze mocks.
