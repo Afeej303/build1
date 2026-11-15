@@ -16,6 +16,7 @@ import {
 } from '@nestjs/common';
 import {
   IsISO8601,
+  IsIn,
   IsOptional,
   IsUUID,
   IsString,
@@ -32,6 +33,12 @@ class DateRange {
 
   @IsISO8601({ strict: true })
   to!: string;
+}
+
+class AppointmentListQuery extends DateRange {
+  @IsOptional()
+  @IsIn(['patient'])
+  scope?: 'patient';
 }
 
 class RescheduleBody {
@@ -753,14 +760,13 @@ export class AppointmentsController {
   }
 
   @Get('users/me/appointments')
-  async list(@CurrentUser('id') userId: string, @Query() range: DateRange) {
+  async list(@CurrentUser('id') userId: string, @Query() range: AppointmentListQuery) {
     const items = await this.db.appointment.findMany({
       where: {
         slot: { startsAt: dateRange(range) },
-        OR: [
-          { patient: { userId } },
-          { slot: { queue: { doctorId: userId } } },
-        ],
+        ...(range.scope === 'patient'
+          ? { patient: { userId } }
+          : { OR: [{ patient: { userId } }, { slot: { queue: { doctorId: userId } } }] }),
       },
       include: appointmentDetails,
       orderBy: { slot: { startsAt: 'asc' } },
