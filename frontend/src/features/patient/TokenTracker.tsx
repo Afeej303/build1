@@ -17,14 +17,17 @@ import {
   AlertCircle,
   CheckCircle2,
   RefreshCw,
-  Stethoscope
+  Stethoscope,
+  Phone,
+  Building,
+  Activity
 } from 'lucide-react';
 import { Header, Page, Btn, Field, StatusPill, SwapText, CountUp, Card, Eyebrow, ease } from '../../components/hq/ui';
 import { apiClient } from '../../lib/api-client';
 import { useAuth } from '../../lib/auth';
 import { cn } from '../../lib/utils';
 import type { PatientTokenStatus } from '../../types/contract';
-import { M1_PATIENT_A, M1_PATIENT_B } from '../../config/m1-accounts';
+import { M1_CONFIG, M1_PATIENT_A, M1_PATIENT_B } from '../../config/m1-accounts';
 
 export const TokenTracker: React.FC = () => {
   const { session, user, signOut } = useAuth();
@@ -466,33 +469,14 @@ function Dashboard() {
   if (isConfirmedEmpty) {
     return (
       <Page className="max-w-2xl">
-        <div className="surface p-6 sm:p-8 rounded-2xl border border-border text-center shadow-lift">
-          <div className="size-12 rounded-full bg-muted text-muted-foreground flex items-center justify-center mx-auto mb-4">
-            <User size={24} />
-          </div>
-          <h2 className="text-xl font-bold tracking-tight">No Patient Profile Linked</h2>
-          <p className="text-xs text-muted-foreground mt-2 max-w-md mx-auto leading-relaxed">
-            Your account ({user?.email}) is authenticated, but no verified patient record is linked at this hospital.
-          </p>
-          <p className="text-[11px] text-muted-foreground mt-1 max-w-md mx-auto">
-            Please visit hospital reception to issue a patient UHID, or complete patient intake registration.
-          </p>
-          <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-2">
-            <Link
-              to="/"
-              className="press w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl border border-border bg-card hover:bg-muted text-xs font-medium text-foreground transition-colors"
-            >
-              Back to Home
-            </Link>
-            <button
-              type="button"
-              onClick={() => signOut()}
-              className="press w-full sm:w-auto px-4 py-2 rounded-xl border border-border bg-card hover:bg-muted text-xs font-medium text-foreground transition-colors cursor-pointer"
-            >
-              Sign Out
-            </button>
-          </div>
-        </div>
+        <PatientIntakeRegistrationCard
+          user={user}
+          hospital={hospital}
+          onRegistered={() => {
+            queryClient.invalidateQueries({ queryKey: ['myPatients'] });
+          }}
+          onSignOut={() => signOut()}
+        />
       </Page>
     );
   }
@@ -602,6 +586,7 @@ function Dashboard() {
             {tab === 'My Appointments' && (
               <AppointmentsHistoryTab
                 onGoToBook={() => setTab('Book Appointment')}
+                onGoToTracker={() => setTab('Live Queue Tracker')}
               />
             )}
           </motion.div>
@@ -727,7 +712,202 @@ function LiveTrackerTab({
 }
 
 /* -------------------------------------------------------------------------
+   Helper: Age & Date of Birth conversions
+   ------------------------------------------------------------------------- */
+function calculateAgeFromDob(dobString?: string | null): string {
+  if (!dobString) return '';
+  const dob = new Date(dobString);
+  if (isNaN(dob.getTime())) return '';
+  const now = new Date();
+  let years = now.getUTCFullYear() - dob.getUTCFullYear();
+  const m = now.getUTCMonth() - dob.getUTCMonth();
+  if (m < 0 || (m === 0 && now.getUTCDate() < dob.getUTCDate())) {
+    years--;
+  }
+  return String(Math.max(0, years));
+}
+
+function ageToDobString(ageStr?: string | null): string | null {
+  if (!ageStr || !ageStr.trim()) return null;
+  const age = parseInt(ageStr.trim(), 10);
+  if (isNaN(age) || age < 0 || age > 125) return null;
+  const birthYear = new Date().getFullYear() - age;
+  return `${birthYear}-01-01`;
+}
+
+/* -------------------------------------------------------------------------
+   Barrier B: Complete Patient Registration Card for Unlinked Users
+   ------------------------------------------------------------------------- */
+function PatientIntakeRegistrationCard({
+  user,
+  hospital,
+  onRegistered,
+  onSignOut,
+}: {
+  user: any;
+  hospital: any;
+  onRegistered: () => void;
+  onSignOut: () => void;
+}) {
+  const [name, setName] = useState(
+    user?.user_metadata?.displayName ||
+    user?.user_metadata?.full_name ||
+    user?.email?.split('@')[0] ||
+    ''
+  );
+  const [phone, setPhone] = useState(user?.user_metadata?.phone || '');
+  const [age, setAge] = useState('');
+  const [gender, setGender] = useState<'male' | 'female' | 'other'>('male');
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    const cleanName = name.trim();
+    if (!cleanName) {
+      setError('Please enter your full patient name.');
+      return;
+    }
+    const targetHospitalId = hospital?.id || M1_CONFIG.hospitalId;
+    if (!targetHospitalId) {
+      setError('Hospital record could not be resolved. Please try again.');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const created = await apiClient.selfRegisterPatient(targetHospitalId, cleanName);
+
+      const updates: any = {};
+      if (phone.trim()) {
+        updates.phone = phone.trim();
+      }
+      if (gender) {
+        updates.gender = gender;
+      }
+      const dob = ageToDobString(age);
+      if (dob) {
+        updates.dateOfBirth = dob;
+      }
+
+      if (Object.keys(updates).length > 0 && created?.id) {
+        try {
+          await apiClient.updatePatientProfile(created.id, updates);
+        } catch (updateErr) {
+          console.warn('Profile details update warning:', updateErr);
+        }
+      }
+
+      onRegistered();
+    } catch (err: any) {
+      setError(err.message || 'Failed to register patient profile.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="surface p-6 sm:p-8 rounded-2xl border border-border shadow-lift text-left">
+      <div className="size-12 rounded-full bg-primary/10 text-primary flex items-center justify-center mx-auto mb-4">
+        <User size={24} />
+      </div>
+      <div className="text-center mb-6">
+        <h2 className="text-xl sm:text-2xl font-bold tracking-tight">Complete Patient Registration</h2>
+        <p className="text-xs text-muted-foreground mt-1.5 max-w-md mx-auto leading-relaxed">
+          Your account ({user?.email}) is authenticated. Enter your details below to issue your Unique Hospital Identification Number (UHID) and unlock appointment booking & live queue tracking.
+        </p>
+        <div className="mt-3 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-muted text-[11px] font-mono text-muted-foreground">
+          <MapPin size={12} />
+          <span>{hospital?.name || M1_CONFIG.hospitalName || 'City General Hospital OPD'}</span>
+        </div>
+      </div>
+
+      {error && (
+        <div className="mb-4 p-3 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-xs flex items-center gap-2">
+          <AlertCircle size={15} className="shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
+
+      <form onSubmit={handleRegister} className="space-y-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Field
+            label="Patient Full Name *"
+            placeholder="e.g. Muhammed Parad"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+          />
+          <Field
+            label="Phone Number"
+            type="tel"
+            placeholder="e.g. +91 98765 43210"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+          />
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Field
+            label="Patient Age (Years)"
+            type="number"
+            min={0}
+            max={125}
+            placeholder="e.g. 28"
+            value={age}
+            onChange={(e) => setAge(e.target.value)}
+          />
+          <label className="block">
+            <span className="mb-1.5 block text-[12px] font-medium text-muted-foreground">Patient Gender</span>
+            <select
+              value={gender}
+              onChange={(e) => setGender(e.target.value as any)}
+              className="h-11 w-full rounded-xl border border-input bg-card px-3.5 text-[15px] outline-none transition-[box-shadow,border-color] duration-200 focus:border-primary focus:ring-4 focus:ring-ring"
+            >
+              <option value="male">Male</option>
+              <option value="female">Female</option>
+              <option value="other">Other</option>
+            </select>
+          </label>
+        </div>
+
+        <div className="pt-2">
+          <Btn
+            type="submit"
+            variant="ink"
+            size="lg"
+            loading={loading}
+            className="w-full gap-2 font-semibold"
+          >
+            Issue Hospital UHID & Enter Portal <ArrowRight size={16} />
+          </Btn>
+        </div>
+
+        <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-2 text-xs text-muted-foreground">
+          <Link
+            to="/"
+            className="press px-3 py-1.5 rounded-lg hover:text-foreground transition-colors"
+          >
+            Back to Home
+          </Link>
+          <span>•</span>
+          <button
+            type="button"
+            onClick={onSignOut}
+            className="press px-3 py-1.5 rounded-lg hover:text-foreground transition-colors cursor-pointer"
+          >
+            Sign Out
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------
    Tab B: Book Appointment (Real Slots via GET /queues/:id/appointment-slots)
+   Captures: Patient name, Phone number, Age, Gender, Department, Doctor, Date & Time
    ------------------------------------------------------------------------- */
 function BookingFormTab({
   patient,
@@ -739,9 +919,34 @@ function BookingFormTab({
   onDone: () => void;
 }) {
   const queryClient = useQueryClient();
+
+  // Initial demographics from active patient profile
+  const initialAge = useMemo(() => calculateAgeFromDob(patient?.dateOfBirth), [patient?.dateOfBirth]);
+
+  const [patientName, setPatientName] = useState<string>(patient?.displayName || '');
+  const [phone, setPhone] = useState<string>(patient?.phone || '');
+  const [age, setAge] = useState<string>(initialAge);
+  const [gender, setGender] = useState<string>(patient?.gender || 'male');
+
+  const [selectedDepartment, setSelectedDepartment] = useState<string>('ALL');
   const [selectedQueueId, setSelectedQueueId] = useState<string>(queues[0]?.id || '');
   const [selectedSlotId, setSelectedSlotId] = useState<string>('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Departments list for quick filtering
+  const departments = useMemo(() => {
+    const set = new Set<string>();
+    queues.forEach((q) => {
+      if (q.departmentName) set.add(q.departmentName);
+    });
+    return ['ALL', ...Array.from(set)];
+  }, [queues]);
+
+  // Filter queues by selected department
+  const filteredQueues = useMemo(() => {
+    if (selectedDepartment === 'ALL') return queues;
+    return queues.filter((q) => q.departmentName === selectedDepartment);
+  }, [queues, selectedDepartment]);
 
   // Set default selected queue when queues load
   useEffect(() => {
@@ -749,6 +954,20 @@ function BookingFormTab({
       setSelectedQueueId(queues[0].id);
     }
   }, [queues, selectedQueueId]);
+
+  // When department changes, if selected queue not in filtered, select first
+  useEffect(() => {
+    if (filteredQueues.length > 0 && !filteredQueues.some((q) => q.id === selectedQueueId)) {
+      setSelectedQueueId(filteredQueues[0].id);
+      setSelectedSlotId('');
+    }
+  }, [filteredQueues, selectedQueueId]);
+
+  // Selected queue metadata (Doctor, Department, Room)
+  const selectedQueue = useMemo(
+    () => queues.find((q) => q.id === selectedQueueId) || null,
+    [queues, selectedQueueId]
+  );
 
   // Query available slots for the selected queue (today to +7 days in ISO format)
   // Stabilize date parameters to prevent millisecond churn on re-renders
@@ -764,7 +983,6 @@ function BookingFormTab({
   const {
     data: slotsData,
     isLoading: isSlotsLoading,
-    error: slotsError,
   } = useQuery({
     queryKey: ['availableSlots', selectedQueueId, todayIso],
     queryFn: ({ signal }) => apiClient.getAvailableSlots(selectedQueueId, todayIso, nextWeekIso, signal),
@@ -774,27 +992,61 @@ function BookingFormTab({
 
   const slots = slotsData?.items || [];
 
-  // Mutation: Book slot
+  // Selected slot details
+  const selectedSlot = useMemo(
+    () => slots.find((s) => s.id === selectedSlotId) || null,
+    [slots, selectedSlotId]
+  );
+
+  // Mutation: Book slot & update patient demographics
   const bookMutation = useMutation({
-    mutationFn: (slotId: string) => apiClient.bookAppointment(slotId),
+    mutationFn: async () => {
+      if (!selectedSlotId) {
+        throw new Error('Please select an available consultation slot.');
+      }
+      if (!patientName.trim()) {
+        throw new Error('Patient full name is required.');
+      }
+
+      // Update patient profile with current demographics
+      const updates: any = {
+        displayName: patientName.trim(),
+        gender: gender || undefined,
+      };
+      if (phone.trim()) {
+        updates.phone = phone.trim();
+      }
+      const dob = ageToDobString(age);
+      if (dob) {
+        updates.dateOfBirth = dob;
+      }
+
+      if (patient?.id) {
+        try {
+          await apiClient.updatePatientProfile(patient.id, updates);
+        } catch (profileErr) {
+          console.warn('Patient details update warning:', profileErr);
+        }
+      }
+
+      return apiClient.bookAppointment(selectedSlotId, patient?.id);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['myAppointments'] });
       queryClient.invalidateQueries({ queryKey: ['availableSlots'] });
+      queryClient.invalidateQueries({ queryKey: ['myPatients'] });
+      queryClient.invalidateQueries({ queryKey: ['myActiveTokens'] });
       onDone();
     },
     onError: (err: any) => {
-      setErrorMessage(err.message || 'Failed to book slot.');
+      setErrorMessage(err.message || 'Failed to book consultation slot.');
     },
   });
 
   const handleConfirm = (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
-    if (!selectedSlotId) {
-      setErrorMessage('Please select an available consultation slot.');
-      return;
-    }
-    bookMutation.mutate(selectedSlotId);
+    bookMutation.mutate();
   };
 
   return (
@@ -803,7 +1055,7 @@ function BookingFormTab({
         <Eyebrow>New Consultation</Eyebrow>
         <h2 className="text-2xl font-bold tracking-tight mt-1">Book OPD Appointment</h2>
         <p className="text-xs text-muted-foreground mt-0.5">
-          Select an available doctor slot. Check in at reception on arrival to receive your live queue token.
+          Verify patient details, select clinical specialty & doctor, and pick an available time slot.
         </p>
       </div>
 
@@ -815,18 +1067,102 @@ function BookingFormTab({
       )}
 
       <form onSubmit={handleConfirm} className="space-y-6">
-        {/* Step 1: Select Queue / Doctor */}
-        <div>
-          <span className="mb-2 block text-[12px] font-medium text-muted-foreground">
-            1. Select Clinical Queue & Doctor
-          </span>
-          {queues.length === 0 ? (
+        {/* Step 1: Patient Information */}
+        <div className="p-4 sm:p-5 rounded-2xl border border-border bg-card/50 space-y-3.5">
+          <div className="flex items-center justify-between pb-1 border-b border-border/50">
+            <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+              <User size={13} className="text-primary" />
+              1. Patient Demographics
+            </span>
+            <span className="mono text-[11px] px-2 py-0.5 rounded bg-muted text-muted-foreground font-semibold">
+              UHID: {patient?.patientNumber || 'PENDING'}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+            <Field
+              label="Patient Name *"
+              value={patientName}
+              onChange={(e) => setPatientName(e.target.value)}
+              placeholder="Full Name"
+              required
+            />
+            <Field
+              label="Phone Number"
+              type="tel"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="+91 98765 43210"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+            <Field
+              label="Patient Age (Years)"
+              type="number"
+              min={0}
+              max={125}
+              value={age}
+              onChange={(e) => setAge(e.target.value)}
+              placeholder="e.g. 28"
+            />
+            <label className="block">
+              <span className="mb-1.5 block text-[12px] font-medium text-muted-foreground">Patient Gender</span>
+              <select
+                value={gender}
+                onChange={(e) => setGender(e.target.value)}
+                className="h-11 w-full rounded-xl border border-input bg-card px-3.5 text-[15px] outline-none transition-[box-shadow,border-color] duration-200 focus:border-primary focus:ring-4 focus:ring-ring"
+              >
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+                <option value="other">Other</option>
+              </select>
+            </label>
+          </div>
+        </div>
+
+        {/* Step 2: Department & Doctor */}
+        <div className="p-4 sm:p-5 rounded-2xl border border-border bg-card/50 space-y-3.5">
+          <div className="flex items-center justify-between pb-1 border-b border-border/50">
+            <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+              <Stethoscope size={13} className="text-primary" />
+              2. Select Department & Doctor
+            </span>
+            {selectedQueue && (
+              <span className="text-xs font-medium text-primary">
+                {selectedQueue.departmentName}
+              </span>
+            )}
+          </div>
+
+          {/* Department Filter Tabs */}
+          {departments.length > 2 && (
+            <div className="flex flex-wrap gap-1.5 pt-1">
+              {departments.map((dept) => (
+                <button
+                  key={dept}
+                  type="button"
+                  onClick={() => setSelectedDepartment(dept)}
+                  className={cn(
+                    'press px-3 py-1 rounded-full text-xs font-medium transition-colors cursor-pointer',
+                    selectedDepartment === dept
+                      ? 'bg-primary text-primary-foreground font-semibold shadow-xs'
+                      : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                  )}
+                >
+                  {dept === 'ALL' ? 'All Specialties' : dept}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {filteredQueues.length === 0 ? (
             <p className="text-xs text-muted-foreground p-4 rounded-xl bg-muted/40 font-mono">
-              No active doctor queues discovered. Please verify backend doctor assignments.
+              No active doctor queues discovered in this department.
             </p>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              {queues.map((q) => (
+              {filteredQueues.map((q) => (
                 <button
                   key={q.id}
                   type="button"
@@ -838,18 +1174,20 @@ function BookingFormTab({
                   className={cn(
                     'press p-3.5 rounded-2xl border text-left cursor-pointer transition-all',
                     selectedQueueId === q.id
-                      ? 'border-primary bg-accent/40 shadow-sm'
+                      ? 'border-primary bg-primary/[0.07] shadow-sm ring-1 ring-primary'
                       : 'border-border bg-card hover:border-foreground/30'
                   )}
                 >
                   <div className="flex items-center justify-between">
-                    <span className="font-semibold text-sm">{q.name}</span>
+                    <span className="font-semibold text-sm">
+                      {q.doctorName ? `Dr. ${q.doctorName}` : q.name}
+                    </span>
                     <span className="mono text-xs px-2 py-0.5 rounded bg-muted text-muted-foreground">
                       {q.roomLabel || 'Room TBA'}
                     </span>
                   </div>
                   <p className="text-xs text-muted-foreground mt-1">
-                    {q.doctorName ? `Dr. ${q.doctorName}` : 'Duty Physician'} • {q.departmentName}
+                    Department: <span className="font-medium text-foreground">{q.departmentName}</span>
                   </p>
                 </button>
               ))}
@@ -857,21 +1195,22 @@ function BookingFormTab({
           )}
         </div>
 
-        {/* Step 2: Available Slots for Selected Queue */}
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[12px] font-medium text-muted-foreground">
-              2. Available Consultation Slots
+        {/* Step 3: Available Slots (Date & Time) */}
+        <div className="p-4 sm:p-5 rounded-2xl border border-border bg-card/50 space-y-3.5">
+          <div className="flex items-center justify-between pb-1 border-b border-border/50">
+            <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+              <Calendar size={13} className="text-primary" />
+              3. Select Consultation Date & Time
             </span>
             <span className="text-xs font-mono text-muted-foreground">
-              {slots.length} published slots
+              {slots.length} available slots
             </span>
           </div>
 
           {isSlotsLoading ? (
             <div className="p-8 text-center bg-muted/20 rounded-2xl">
               <div className="size-6 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-              <p className="text-xs text-muted-foreground font-mono">Loading published slots...</p>
+              <p className="text-xs text-muted-foreground font-mono">Loading published consultation slots...</p>
             </div>
           ) : slots.length === 0 ? (
             <div className="p-6 text-center border border-border rounded-2xl bg-muted/20">
@@ -879,7 +1218,7 @@ function BookingFormTab({
                 No future appointment slots published for this doctor.
               </p>
               <p className="text-[11px] text-muted-foreground mt-1">
-                The doctor must publish slots from the Doctor Clinical Workstation.
+                The doctor must publish available slots from their clinical console.
               </p>
             </div>
           ) : (
@@ -901,7 +1240,7 @@ function BookingFormTab({
                     className={cn(
                       'press p-3 rounded-xl border text-left transition-colors cursor-pointer',
                       selectedSlotId === s.id
-                        ? 'border-primary bg-primary text-primary-foreground font-semibold'
+                        ? 'border-primary bg-primary text-primary-foreground font-semibold shadow-xs'
                         : 'border-border bg-card hover:border-foreground/30'
                     )}
                   >
@@ -914,6 +1253,47 @@ function BookingFormTab({
           )}
         </div>
 
+        {/* Step 4: Booking Summary Review Card */}
+        {selectedQueue && (
+          <div className="p-4 rounded-2xl border border-primary/20 bg-primary/[0.04] space-y-2.5">
+            <span className="text-xs font-bold uppercase tracking-wider text-primary flex items-center gap-1.5">
+              <CheckCircle2 size={14} />
+              Booking Summary Review
+            </span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+              <div>
+                <span className="text-muted-foreground">Patient:</span>{' '}
+                <strong className="text-foreground">{patientName || 'Patient'}</strong>
+                {gender && <span className="text-muted-foreground capitalize"> • {gender}</span>}
+                {age && <span className="text-muted-foreground"> • {age} yrs</span>}
+                {phone && <span className="text-muted-foreground"> • {phone}</span>}
+              </div>
+              <div>
+                <span className="text-muted-foreground">Department:</span>{' '}
+                <strong className="text-foreground">{selectedQueue.departmentName}</strong>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Doctor:</span>{' '}
+                <strong className="text-foreground">
+                  {selectedQueue.doctorName ? `Dr. ${selectedQueue.doctorName}` : 'Duty Physician'}
+                </strong>{' '}
+                <span className="text-muted-foreground font-mono">({selectedQueue.roomLabel || 'Room TBA'})</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Scheduled Time:</span>{' '}
+                {selectedSlot ? (
+                  <strong className="text-primary font-mono">
+                    {new Date(selectedSlot.startsAt).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}{' '}
+                    at {new Date(selectedSlot.startsAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </strong>
+                ) : (
+                  <span className="text-muted-foreground italic">Select a slot above</span>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Submit Booking */}
         <div className="pt-2">
           <Btn
@@ -921,8 +1301,8 @@ function BookingFormTab({
             variant="ink"
             size="lg"
             loading={bookMutation.isPending}
-            disabled={!selectedSlotId}
-            className="w-full gap-2"
+            disabled={!selectedSlotId || !patientName.trim()}
+            className="w-full gap-2 font-semibold"
           >
             Confirm Appointment Booking <ArrowRight size={16} />
           </Btn>
@@ -937,8 +1317,10 @@ function BookingFormTab({
    ------------------------------------------------------------------------- */
 function AppointmentsHistoryTab({
   onGoToBook,
+  onGoToTracker,
 }: {
   onGoToBook: () => void;
+  onGoToTracker?: () => void;
 }) {
   const queryClient = useQueryClient();
 
@@ -1084,10 +1466,29 @@ function AppointmentsHistoryTab({
                     {start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </span>
                 </p>
+                {apt.patient && (
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    Patient: <strong className="text-foreground">{apt.patient.displayName}</strong>
+                    {apt.patient.patientNumber && (
+                      <span className="mono opacity-80"> • UHID: {apt.patient.patientNumber}</span>
+                    )}
+                  </p>
+                )}
               </div>
 
-              {isBooked && (
-                <div className="flex items-center gap-2 shrink-0">
+              <div className="flex items-center gap-2 shrink-0">
+                {apt.queueTokenId && onGoToTracker && (
+                  <button
+                    type="button"
+                    onClick={onGoToTracker}
+                    className="press px-3 py-1.5 rounded-full text-xs font-semibold text-primary hover:bg-primary/10 border border-primary/20 flex items-center gap-1 cursor-pointer"
+                  >
+                    <Activity size={12} />
+                    <span>Track Live Token</span>
+                  </button>
+                )}
+
+                {isBooked && (
                   <button
                     onClick={() => cancelMutation.mutate(apt.id)}
                     disabled={cancelMutation.isPending}
@@ -1095,8 +1496,8 @@ function AppointmentsHistoryTab({
                   >
                     Cancel Booking
                   </button>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           );
         })}
