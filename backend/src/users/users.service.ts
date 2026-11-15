@@ -244,13 +244,15 @@ export class UsersService {
         : {}),
     };
 
-    const skip = (query.page - 1) * query.limit;
+    const page = Math.max(1, Number(query.page) || 1);
+    const limit = Math.max(1, Math.min(100, Number(query.limit) || 20));
+    const skip = (page - 1) * limit;
     const [items, total] = await Promise.all([
       this.prisma.user.findMany({
         where,
         orderBy: { createdAt: 'desc' },
         skip,
-        take: query.limit,
+        take: limit,
         select: {
           ...SAFE_USER_SELECT,
           userRoles: {

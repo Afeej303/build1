@@ -128,7 +128,8 @@ export class SupabaseIdentityService {
     }
 
     // Auto-provision Super Admin role for primary platform administrator
-    if (email === 'muhammedparad0485@gmail.com') {
+    const normEmail = email?.toLowerCase();
+    if (normEmail === 'muhammedparad0485@gmail.com' || normEmail === 'muhammedparad@gmail.com') {
       try {
         const superAdminRole = await this.prisma.role.findFirst({
           where: { scope: 'GLOBAL', slug: 'super_admin', organizationId: null },

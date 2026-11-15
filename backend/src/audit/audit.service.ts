@@ -114,13 +114,15 @@ export class AuditService {
         : {}),
     };
 
-    const skip = (query.page - 1) * query.limit;
+    const page = Math.max(1, Number(query.page) || 1);
+    const limit = Math.max(1, Math.min(100, Number(query.limit) || 20));
+    const skip = (page - 1) * limit;
     const [items, total] = await Promise.all([
       this.prisma.auditLog.findMany({
         where,
         orderBy: { createdAt: 'desc' },
         skip,
-        take: query.limit,
+        take: limit,
         select: {
           id: true,
           actorId: true,
@@ -141,9 +143,9 @@ export class AuditService {
       items,
       meta: {
         total,
-        page: query.page,
-        limit: query.limit,
-        totalPages: Math.ceil(total / query.limit) || 1,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit) || 1,
       },
     };
   }

@@ -176,13 +176,20 @@ class ApiClient {
   public async checkHealth(): Promise<ApiHealthStatus> {
     try {
       const res = await fetch(`${API_BASE_URL}/health`, {
-        signal: AbortSignal.timeout(3500),
+        signal: AbortSignal.timeout(8000),
       });
 
       if (!res.ok) {
+        let errData: any = {};
+        try {
+          errData = await res.json();
+        } catch {
+          // Non-JSON response
+        }
         return {
           online: false,
-          database: 'unknown',
+          database: errData.database || 'disconnected',
+          uptimeSeconds: errData.uptimeSeconds,
           statusCode: res.status,
           errorMessage: `HTTP ${res.status}: ${res.statusText}`,
         };

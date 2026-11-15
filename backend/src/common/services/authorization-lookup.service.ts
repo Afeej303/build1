@@ -53,8 +53,17 @@ export class AuthorizationLookupService {
         where: { id: userId },
         select: { email: true },
       });
-      if (userRecord?.email?.toLowerCase() === 'muhammedparad0485@gmail.com') {
+      const normEmail = userRecord?.email?.toLowerCase();
+      if (normEmail === 'muhammedparad0485@gmail.com' || normEmail === 'muhammedparad@gmail.com') {
         roleSet.add('super_admin');
+        permissionSet.add('audit:read');
+        permissionSet.add('user:read');
+        permissionSet.add('user:write');
+        permissionSet.add('hospital:read');
+        permissionSet.add('hospital:write');
+        permissionSet.add('role:read');
+        permissionSet.add('role:write');
+        permissionSet.add('permission:read');
       }
     } catch {
       // Fallback safely
