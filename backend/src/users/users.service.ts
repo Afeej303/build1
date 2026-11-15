@@ -78,7 +78,7 @@ export class UsersService {
     const { passwordHash, ...safeUser } = user;
     const authorization = await this.authLookup.getGlobalRolesAndPermissions(userId);
 
-    const [departments, doctorQueues] = await Promise.all([
+    const [departments, doctorQueues, hospitalAdmins] = await Promise.all([
       this.prisma.department.findMany({
         where: { receptionists: { some: { userId } } },
         include: { queues: { include: { doctor: { select: { name: true } } } } },
@@ -87,8 +87,19 @@ export class UsersService {
         where: { doctorId: userId },
         include: { department: true, doctor: { select: { name: true } } },
       }),
+      this.prisma.hospitalAdminAssignment.findMany({
+        where: { userId },
+        select: { hospitalId: true },
+        orderBy: { hospitalId: 'asc' },
+      }),
     ]);
     const staffAssignments = [
+      ...hospitalAdmins.map(({ hospitalId }) => ({
+        role: 'hospital_admin',
+        hospitalId,
+        department: null,
+        queues: [],
+      })),
       ...departments.map(({ id, name, hospitalId, queues }) => ({
         role: 'receptionist',
         hospitalId,

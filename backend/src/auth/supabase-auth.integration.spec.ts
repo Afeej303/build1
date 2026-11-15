@@ -17,6 +17,9 @@ const profile = {
   emailVerifiedAt: new Date(confirmedAt),
 };
 const assignments = vi.fn().mockResolvedValue([]);
+const receptionDepartments = vi.fn().mockResolvedValue([]);
+const doctorQueues = vi.fn().mockResolvedValue([]);
+const hospitalAdminAssignments = vi.fn().mockResolvedValue([]);
 let app: NestExpressApplication;
 
 beforeAll(async () => {
@@ -45,8 +48,9 @@ beforeAll(async () => {
         findFirst: vi.fn().mockResolvedValue(profile),
       },
       userRole: { findMany: assignments },
-      department: { findMany: vi.fn().mockResolvedValue([]) },
-      hospitalQueue: { findMany: vi.fn().mockResolvedValue([]) },
+      department: { findMany: receptionDepartments },
+      hospitalQueue: { findMany: doctorQueues },
+      hospitalAdminAssignment: { findMany: hospitalAdminAssignments },
       role: { findMany: vi.fn().mockResolvedValue([]) },
     })
     .compile();
@@ -85,4 +89,40 @@ it('connects Supabase identity to the profile and database-backed permission gua
     .get('/sessions')
     .set('Authorization', 'Bearer token')
     .expect(404);
+});
+
+const hospitalA = '98ad1273-b9bf-4234-b6a1-e3c858a7354c';
+const hospitalB = 'a0741362-27e7-435e-8696-fccd8d206fe0';
+
+it.each([
+  { name: 'single hospital assignment', hospitalIds: [hospitalA], clinical: false },
+  { name: 'multiple hospital assignments', hospitalIds: [hospitalA, hospitalB], clinical: false },
+  { name: 'no hospital assignment', hospitalIds: [], clinical: false },
+  { name: 'combined hospital admin, doctor and receptionist assignments', hospitalIds: [hospitalA], clinical: true },
+])('returns the expected profile for $name', async ({ hospitalIds, clinical }) => {
+  hospitalAdminAssignments.mockResolvedValueOnce(hospitalIds.map((hospitalId) => ({ hospitalId })));
+
+  const department = { id: 'department', name: 'General medicine' };
+  const queue = { id: 'queue', name: 'Outpatient', doctor: { name: 'Doctor' }, roomLabel: '101' };
+  const queueView = { id: queue.id, name: queue.name, doctorName: queue.doctor.name, roomLabel: queue.roomLabel };
+  if (clinical) {
+    receptionDepartments.mockResolvedValueOnce([{ ...department, hospitalId: hospitalB, queues: [queue] }]);
+    doctorQueues.mockResolvedValueOnce([{ ...queue, department: { ...department, hospitalId: hospitalB } }]);
+  }
+
+  const response = await request(app.getHttpServer())
+    .get('/users/me')
+    .set('Authorization', 'Bearer token')
+    .expect(200);
+  expect(response.body.staffAssignments).toEqual([
+    ...hospitalIds.map((hospitalId) => ({ role: 'hospital_admin', hospitalId, department: null, queues: [] })),
+    ...(clinical ? [
+      { role: 'receptionist', hospitalId: hospitalB, department, queues: [queueView] },
+      { role: 'doctor', hospitalId: hospitalB, department, queues: [queueView] },
+    ] : []),
+  ]);
+  expect(response.body.roles).toEqual([]);
+  expect(hospitalAdminAssignments).toHaveBeenLastCalledWith(
+    expect.objectContaining({ where: { userId: id }, select: { hospitalId: true } }),
+  );
 });
