@@ -16,6 +16,7 @@ import { runHospitalAdminServiceTests } from './hospital-admin-service.test';
 import { runAwaitingBackendBadgeTests } from './awaiting-backend-badge.test';
 import { runErrorHandlingTests } from './error-handling.test';
 import { runMobileNavTests } from './mobile-floating-nav.test';
+import { runAuthIdentityRemediationTests } from '../security/auth-identity-remediation.test';
 
 export interface ConsolidatedTestSummary {
   timestamp: string;
@@ -69,9 +70,14 @@ export async function runAllAdminIntegrationTests(): Promise<ConsolidatedTestSum
   suites.push({ name: 'Error Classification & Diagnostics Sanitization', ...errorResults });
 
   // Suite 7: Mobile Floating Navigation
-  console.log('\n[Suite 7/7] Running Mobile Floating Navigation Tests...');
+  console.log('\n[Suite 7/8] Running Mobile Floating Navigation Tests...');
   const mobileNavResults = runMobileNavTests();
   suites.push({ name: 'Mobile Floating Navigation', ...mobileNavResults });
+
+  // Suite 8: M1 Security Remediation & Identity
+  console.log('\n[Suite 8/8] Running M1 Security Remediation & Identity Tests...');
+  const securityResults = await runAuthIdentityRemediationTests();
+  suites.push({ name: 'M1 Security Remediation & Identity', ...securityResults });
 
   const totalPassed = suites.reduce((acc, s) => acc + s.passed, 0);
   const totalFailed = suites.reduce((acc, s) => acc + s.failed, 0);

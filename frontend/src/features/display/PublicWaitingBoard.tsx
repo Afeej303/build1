@@ -89,6 +89,24 @@ export const PublicWaitingBoard: React.FC = () => {
         } catch {
           // AudioContext policy handled
         }
+
+        // EXT-01: Web Speech API Voice Announcement (zero-PII, room-targeted)
+        if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+          try {
+            window.speechSynthesis.cancel();
+            const destination = queueStatus?.roomLabel || 'Consultation Room';
+            const text = `Token ${currentDisplayNumber}, please proceed to ${destination}`;
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.rate = 0.92;
+            utterance.pitch = 1.0;
+            utterance.volume = 1.0;
+            setTimeout(() => {
+              window.speechSynthesis.speak(utterance);
+            }, 750);
+          } catch {
+            // SpeechSynthesis policy handled
+          }
+        }
       }
 
       const timer = setTimeout(() => setFlash(false), 3000);

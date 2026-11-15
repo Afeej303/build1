@@ -12,6 +12,7 @@ import {
   Info,
 } from 'lucide-react';
 import { Btn, Field, ease } from '../../components/hq/ui';
+import { apiClient } from '../../lib/api-client';
 import type { IncidentSeverity, IncidentCategory, WebIncident } from '../../services/types';
 import { cn } from '../../lib/utils';
 
@@ -66,42 +67,103 @@ export const ReportIncidentModal: React.FC<ReportIncidentModalProps> = ({
 
   if (!open) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim() || !description.trim()) return;
 
     setIsSubmitting(true);
 
-    const clientTelemetry = `${navigator.userAgent} | Screen: ${window.screen.width}x${window.screen.height} | DPR: ${window.devicePixelRatio}`;
-
-    const newIncident: WebIncident = {
-      id: `inc-${Date.now().toString(36)}`,
-      hospitalName,
-      reporterEmail: 'hospital-admin@hospital.org',
-      title: title.trim(),
-      severity,
-      category,
-      component: component.trim() || defaultComponent,
-      description: description.trim(),
-      status: 'OPEN',
-      createdAt: new Date().toISOString(),
+    // Map UI category to valid backend enum: API_ERROR | UI_FREEZE | AUTH_FAILURE | DATA_MISMATCH | PERFORMANCE | OTHER
+    const mapCategory = (cat: string): string => {
+      switch (cat) {
+        case 'AUTH': return 'AUTH_FAILURE';
+        case 'NETWORK':
+        case 'SYNC':
+          return 'DATA_MISMATCH';
+        case 'HARDWARE':
+        case 'UI_BUG':
+          return 'UI_FREEZE';
+        case 'PERFORMANCE': return 'PERFORMANCE';
+        default: return 'OTHER';
+      }
     };
 
-    // Save to localStorage diagnostics ledger
-    try {
-      const stored = localStorage.getItem('hqms_hospital_incidents');
-      const list: WebIncident[] = stored ? JSON.parse(stored) : [];
-      list.unshift(newIncident);
-      localStorage.setItem('hqms_hospital_incidents', JSON.stringify(list));
-    } catch {
-      // LocalStorage error silently handled
-    }
+    // Sanitize telemetry and diagnostic payload (zero PII)
+    const diagnostics = {
+      hospitalName,
+      title: title.trim(),
+      description: description.trim(),
+      userAgent: navigator.userAgent,
+      screenResolution: `${window.screen.width}x${window.screen.height}`,
+      devicePixelRatio: window.devicePixelRatio,
+      timestamp: new Date().toISOString(),
+    };
 
-    setTimeout(() => {
-      setIsSubmitting(false);
+    try {
+      const result = await apiClient.reportIncident({
+        severity: severity,
+        category: mapCategory(category),
+        affectedRoute: window.location.pathname,
+        component: component.trim() || defaultComponent,
+        errorMessage: title.trim(),
+        diagnostics,
+      });
+
+      const newIncident: WebIncident = {
+        id: result.id,
+        hospitalName,
+        reporterEmail: 'hospital-admin@hospital.org',
+        title: title.trim(),
+        severity,
+        category,
+        component: component.trim() || defaultComponent,
+        description: description.trim(),
+        status: (result.status as any) || 'OPEN',
+        createdAt: result.createdAt || new Date().toISOString(),
+      };
+
+      // Also persist to local cache for quick inspection in the current session
+      try {
+        const stored = localStorage.getItem('hqms_hospital_incidents');
+        const list: WebIncident[] = stored ? JSON.parse(stored) : [];
+        list.unshift(newIncident);
+        localStorage.setItem('hqms_hospital_incidents', JSON.stringify(list));
+      } catch {
+        // LocalStorage fallback handled
+      }
+
       setSubmittedIncident(newIncident);
       onIncidentReported?.(newIncident);
-    }, 400);
+    } catch {
+      // Offline fallback: save locally if backend is unreachable
+      const offlineId = `inc-offline-${Date.now().toString(36)}`;
+      const offlineIncident: WebIncident = {
+        id: offlineId,
+        hospitalName,
+        reporterEmail: 'hospital-admin@hospital.org',
+        title: title.trim(),
+        severity,
+        category,
+        component: component.trim() || defaultComponent,
+        description: description.trim(),
+        status: 'OPEN',
+        createdAt: new Date().toISOString(),
+      };
+
+      try {
+        const stored = localStorage.getItem('hqms_hospital_incidents');
+        const list: WebIncident[] = stored ? JSON.parse(stored) : [];
+        list.unshift(offlineIncident);
+        localStorage.setItem('hqms_hospital_incidents', JSON.stringify(list));
+      } catch {
+        // LocalStorage fallback handled
+      }
+
+      setSubmittedIncident(offlineIncident);
+      onIncidentReported?.(offlineIncident);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (

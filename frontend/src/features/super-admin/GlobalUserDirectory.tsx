@@ -81,10 +81,10 @@ export function GlobalUserDirectory() {
   };
 
   const normalizeRoleName = (roleInput: any): string => {
-    if (!roleInput) return 'patient';
+    if (!roleInput) return 'unassigned';
     if (typeof roleInput === 'string') return roleInput;
     if (typeof roleInput === 'object') {
-      return roleInput.slug || roleInput.name || roleInput.role || 'patient';
+      return roleInput.slug || roleInput.name || roleInput.role || 'unassigned';
     }
     return String(roleInput);
   };
@@ -231,18 +231,49 @@ export function GlobalUserDirectory() {
     },
     {
       key: 'roles',
-      header: 'Assigned Roles',
+      header: 'Global Roles',
       render: (u) => (
         <div className="flex flex-wrap gap-1.5">
-          {u.roles && Array.isArray(u.roles) && u.roles.length > 0
-            ? u.roles.map((r, idx) => (
-                <React.Fragment key={`${u.id}-role-${idx}`}>
-                  {getRoleBadge(r)}
-                </React.Fragment>
-              ))
-            : getRoleBadge('patient')}
+          {u.roles && Array.isArray(u.roles) && u.roles.length > 0 ? (
+            u.roles.map((r, idx) => (
+              <React.Fragment key={`${u.id}-role-${idx}`}>
+                {getRoleBadge(r)}
+              </React.Fragment>
+            ))
+          ) : (
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-muted text-muted-foreground border border-border">
+              None
+            </span>
+          )}
         </div>
       ),
+    },
+    {
+      key: 'assignments',
+      header: 'Staff Assignments',
+      render: (u) => {
+        const assignments = u.staffAssignments || [];
+        if (!assignments.length) {
+          return <span className="text-xs text-muted-foreground">No staff assignment</span>;
+        }
+        return (
+          <div className="flex flex-wrap gap-1">
+            {assignments.map((a: any, idx: number) => {
+              const roleName = a.role || 'staff';
+              const facility = a.department?.name || a.hospitalId || 'Facility';
+              return (
+                <span
+                  key={`${u.id}-assign-${idx}`}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20"
+                >
+                  <span className="capitalize">{roleName}</span>
+                  <span className="text-muted-foreground text-[10px]">({facility})</span>
+                </span>
+              );
+            })}
+          </div>
+        );
+      },
     },
     {
       key: 'status',
@@ -441,16 +472,36 @@ export function GlobalUserDirectory() {
             <div className="space-y-3">
               <h4 className="font-semibold uppercase tracking-wider text-muted-foreground text-[11px] flex items-center gap-1.5">
                 <Key className="size-3.5" />
-                Assigned RBAC Roles
+                Global Platform Roles
               </h4>
               <div className="flex flex-wrap gap-2">
                 {selectedUser.roles && selectedUser.roles.length > 0 ? (
                   selectedUser.roles.map((r) => getRoleBadge(r))
                 ) : (
-                  <span className="text-xs text-muted-foreground">No roles assigned.</span>
+                  <span className="text-xs text-muted-foreground">No global roles assigned.</span>
                 )}
               </div>
             </div>
+
+            {/* Facility Staff Assignments */}
+            {selectedUser.staffAssignments && selectedUser.staffAssignments.length > 0 && (
+              <div className="space-y-3 pt-3 border-t border-border/60">
+                <h4 className="font-semibold uppercase tracking-wider text-muted-foreground text-[11px] flex items-center gap-1.5">
+                  <ShieldCheck className="size-3.5" />
+                  Facility Staff Assignments
+                </h4>
+                <div className="flex flex-wrap gap-2">
+                  {selectedUser.staffAssignments.map((a: any, idx: number) => (
+                    <span
+                      key={`modal-assign-${idx}`}
+                      className="px-2.5 py-1 rounded-xl text-xs font-medium bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20"
+                    >
+                      <strong className="capitalize">{a.role || 'Staff'}</strong> at {a.department?.name || a.hospitalId || 'Facility'}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Security & Access Posture */}
             <div className="space-y-3 pt-3 border-t border-border/60">

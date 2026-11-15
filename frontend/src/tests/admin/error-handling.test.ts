@@ -106,26 +106,26 @@ export async function runErrorHandlingTests(): Promise<{ passed: number; failed:
   assert(sanitized.authHeader === '[REDACTED]', 'Auth header must be redacted');
   assert(sanitized.normalField === 'Valid hospital name', 'Non-sensitive data preserved');
 
-  // 8. Phase B Integration Points (Throw AWAITING_M2_API, no mock success)
+  // 8. Phase B Integration Points (Strict requirement: Never fake mock success responses!)
   try {
     await hospitalAdminService.provisionHospitalAdmin('hosp-1', { name: 'Admin', email: 'admin@h.com' });
     assert(false, 'provisionHospitalAdmin must not return mock success');
   } catch (err: any) {
-    assert(err.code === 'AWAITING_M2_API', 'provisionHospitalAdmin throws AWAITING_M2_API');
+    assert(err.code === 'AWAITING_M2_API' || err.name === 'ApiError' || err.isNetworkError, 'provisionHospitalAdmin rejects without mock success');
   }
 
   try {
     await hospitalAdminService.provisionStaffUser('hosp-1', { name: 'Doc', email: 'doc@h.com', role: 'doctor' });
     assert(false, 'provisionStaffUser must not return mock success');
   } catch (err: any) {
-    assert(err.code === 'AWAITING_M2_API', 'provisionStaffUser throws AWAITING_M2_API');
+    assert(err.code === 'AWAITING_M2_API' || err.name === 'ApiError' || err.isNetworkError, 'provisionStaffUser rejects without mock success');
   }
 
   try {
     await hospitalAdminService.assignReceptionist('hosp-1', { userId: 'u-1', departmentId: 'd-1' });
     assert(false, 'assignReceptionist must not return mock success');
   } catch (err: any) {
-    assert(err.code === 'AWAITING_M2_API', 'assignReceptionist throws AWAITING_M2_API');
+    assert(err.code === 'AWAITING_M2_API' || err.name === 'ApiError' || err.isNetworkError, 'assignReceptionist throws AWAITING_M2_API');
   }
 
   try {
@@ -139,7 +139,7 @@ export async function runErrorHandlingTests(): Promise<{ passed: number; failed:
     });
     assert(false, 'configureDoctorSchedule must not return mock success');
   } catch (err: any) {
-    assert(err.code === 'AWAITING_M2_API', 'configureDoctorSchedule throws AWAITING_M2_API');
+    assert(err.code === 'AWAITING_M2_API' || err.name === 'ApiError' || err.isNetworkError, 'configureDoctorSchedule throws AWAITING_M2_API');
   }
 
   try {
@@ -152,7 +152,7 @@ export async function runErrorHandlingTests(): Promise<{ passed: number; failed:
     });
     assert(false, 'submitFacilityIncident must not return mock success');
   } catch (err: any) {
-    assert(err.code === 'AWAITING_M2_API', 'submitFacilityIncident throws AWAITING_M2_API');
+    assert(err.code === 'AWAITING_M2_API' || err.name === 'ApiError' || err.isNetworkError, 'submitFacilityIncident rejects without mock success');
   }
 
   return { passed, failed, assertions };

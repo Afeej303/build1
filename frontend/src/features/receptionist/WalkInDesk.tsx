@@ -58,6 +58,7 @@ function Desk() {
   const [assistedOpen, setAssistedOpen] = useState(false);
   const [deptMenuOpen, setDeptMenuOpen] = useState(false);
   const [lastIssuedSlip, setLastIssuedSlip] = useState<any | null>(null);
+  const [slipFormat, setSlipFormat] = useState<'80mm' | '58mm'>('80mm');
 
   // 1. Discover staff-accessible queues
   const {
@@ -430,21 +431,83 @@ function Desk() {
         <div className="space-y-4">
           {lastIssuedSlip ? (
             <div className="surface p-5 border border-primary/40 bg-accent/20">
-              <div className="flex items-center justify-between pb-2 border-b border-border mb-3">
+              <div className="flex items-center justify-between pb-2 border-b border-border mb-3 print:hidden">
                 <span className="font-bold text-xs uppercase tracking-wider text-primary">Last Issued Slip</span>
-                <button onClick={() => setLastIssuedSlip(null)} className="press text-muted-foreground hover:text-foreground">
-                  <X size={14} />
-                </button>
+                <div className="flex items-center gap-1.5">
+                  <div className="flex bg-muted rounded-lg p-0.5 text-[10px] font-medium border border-border">
+                    <button
+                      type="button"
+                      id="toggle-slip-80mm"
+                      onClick={() => setSlipFormat('80mm')}
+                      className={cn(
+                        'px-2 py-0.5 rounded-md transition-all cursor-pointer',
+                        slipFormat === '80mm' ? 'bg-card text-foreground shadow-sm font-semibold' : 'text-muted-foreground hover:text-foreground'
+                      )}
+                    >
+                      80mm
+                    </button>
+                    <button
+                      type="button"
+                      id="toggle-slip-58mm"
+                      onClick={() => setSlipFormat('58mm')}
+                      className={cn(
+                        'px-2 py-0.5 rounded-md transition-all cursor-pointer',
+                        slipFormat === '58mm' ? 'bg-card text-foreground shadow-sm font-semibold' : 'text-muted-foreground hover:text-foreground'
+                      )}
+                    >
+                      58mm
+                    </button>
+                  </div>
+                  <button onClick={() => setLastIssuedSlip(null)} className="press text-muted-foreground hover:text-foreground p-1">
+                    <X size={14} />
+                  </button>
+                </div>
               </div>
-              <div className="text-center py-2">
-                <p className="text-xs uppercase font-mono text-muted-foreground">Token Code</p>
-                <p className="mono text-4xl font-bold tracking-tight text-foreground">{lastIssuedSlip.tokenCode}</p>
-                <p className="text-xs font-semibold text-foreground mt-1">{lastIssuedSlip.patientName}</p>
-                <p className="text-[11px] font-mono text-muted-foreground">{lastIssuedSlip.uhid}</p>
+              <div id="thermal-slip" className={cn("text-center py-2 font-mono", slipFormat === '58mm' && 'slip-58mm')}>
+                {/* Thermal slip receipt header */}
+                <div className="border-b border-dashed border-border/80 pb-2 mb-2">
+                  <p className="font-bold text-xs tracking-wider uppercase">City General Hospital</p>
+                  <p className="text-[10px] text-muted-foreground">Outpatient Queue Token</p>
+                </div>
+
+                <p className="text-[10px] uppercase font-mono text-muted-foreground tracking-widest">Token Number</p>
+                <p className="mono text-4xl font-extrabold tracking-tight text-foreground my-1">{lastIssuedSlip.tokenCode}</p>
+
+                <div className="text-left text-[11px] space-y-1 bg-background/60 p-2.5 rounded-lg border border-border/60 my-2">
+                  <p className="flex justify-between">
+                    <span className="text-muted-foreground">Patient:</span>
+                    <span className="font-semibold text-foreground">{lastIssuedSlip.patientName}</span>
+                  </p>
+                  <p className="flex justify-between">
+                    <span className="text-muted-foreground">UHID:</span>
+                    <span className="font-mono text-foreground">{lastIssuedSlip.uhid}</span>
+                  </p>
+                  <p className="flex justify-between">
+                    <span className="text-muted-foreground">Department:</span>
+                    <span className="text-foreground">{lastIssuedSlip.deptName || 'General OPD'}</span>
+                  </p>
+                  <p className="flex justify-between">
+                    <span className="text-muted-foreground">Room:</span>
+                    <span className="font-semibold text-primary">{lastIssuedSlip.room || 'Room 101'}</span>
+                  </p>
+                  <p className="flex justify-between">
+                    <span className="text-muted-foreground">Doctor:</span>
+                    <span className="text-foreground">{lastIssuedSlip.doctor || 'Attending Physician'}</span>
+                  </p>
+                  <p className="flex justify-between">
+                    <span className="text-muted-foreground">Issued At:</span>
+                    <span className="text-muted-foreground">{lastIssuedSlip.issuedAt}</span>
+                  </p>
+                </div>
+
+                <div className="border-t border-dashed border-border/80 pt-2 text-[10px] text-muted-foreground leading-tight">
+                  <p>Please wait for your token to be called on the display.</p>
+                  <p className="mt-0.5 font-mono text-[9px] opacity-70">Keep this slip until consultation</p>
+                </div>
               </div>
-              <div className="pt-3 border-t border-border flex justify-center">
+              <div className="pt-3 border-t border-border flex justify-center print:hidden">
                 <Btn variant="ink" size="sm" onClick={() => window.print()} className="gap-1.5 w-full">
-                  <Printer size={14} /> Print 80mm Slip
+                  <Printer size={14} /> Print {slipFormat} Thermal Slip
                 </Btn>
               </div>
             </div>

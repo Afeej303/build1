@@ -69,8 +69,9 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     );
   }
 
-  // Hospital Admin validation
-  if (requiredRole === 'hospital_admin' && !(isHospitalAdmin || isSuperAdmin)) {
+  // Hospital Admin validation: Strictly requires verified hospital_admin role + facility assignment
+  // (Super Admin does NOT automatically inherit hospital-level facility access)
+  if (requiredRole === 'hospital_admin' && !isHospitalAdmin) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-6">
         <div className="max-w-md w-full surface p-8 border border-border text-center shadow-lift">

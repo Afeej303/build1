@@ -56,6 +56,7 @@ export interface UserProfile {
   name: string;
   roles: string[];
   permissions: string[];
+  hospitalId?: string | null;
   staffAssignments?: StaffAssignment[];
 }
 

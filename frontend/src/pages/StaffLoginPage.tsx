@@ -98,28 +98,25 @@ export const StaffLoginPage: React.FC = () => {
     try {
       const { profile } = await signIn(email.trim(), password);
 
-      // Verify role assignment
+      // Verify role assignment strictly against verified backend profile
       if (role === 'admin') {
-        const isSuper =
+        const isSuper = Boolean(
           profile?.roles?.some(
-            (r) => typeof r === 'string' && (r.toLowerCase().includes('super') || r.toLowerCase() === 'super_admin')
-          ) ||
-          email.toLowerCase().includes('super') ||
-          email.toLowerCase().includes('build1-admin-');
+            (r) => typeof r === 'string' && (r.toLowerCase() === 'super_admin' || r.toLowerCase() === 'superadmin')
+          )
+        );
 
-        const hasAdminAccess =
-          profile?.roles?.some(
-            (r) =>
-              typeof r === 'string' &&
-              (r.toLowerCase().includes('admin') || r.toLowerCase().includes('super'))
+        const isHospAdmin = Boolean(
+          profile?.staffAssignments?.some(
+            (a) => a.role?.toLowerCase() === 'hospital_admin' && Boolean(a.hospitalId)
           ) ||
-          profile?.permissions?.includes('audit:read') ||
-          email.toLowerCase().includes('admin');
+          profile?.roles?.some((r) => typeof r === 'string' && r.toLowerCase() === 'hospital_admin')
+        );
 
-        if (!hasAdminAccess && profile) {
+        if (!isSuper && !isHospAdmin && profile) {
           throw new Error('Account authenticated, but you do not hold administrative privileges.');
         }
-        
+
         if (redirectTarget) {
           navigate(redirectTarget);
         } else if (isSuper) {
@@ -128,24 +125,22 @@ export const StaffLoginPage: React.FC = () => {
           navigate('/hospital-admin');
         }
       } else if (role === 'doctor') {
-        const hasDoctorAccess =
+        const hasDoctorAccess = Boolean(
           profile?.staffAssignments?.some(
-            (a) => a.role?.toLowerCase() === 'doctor' || (a.queues && a.queues.length > 0)
-          ) ||
-          profile?.roles?.some((r) => typeof r === 'string' && (r.toLowerCase().includes('doctor') || r.toLowerCase().includes('admin'))) ||
-          profile?.permissions?.includes('queue:call_next');
+            (a) => a.role?.toLowerCase() === 'doctor' && Array.isArray(a.queues) && a.queues.length > 0
+          )
+        );
 
         if (!hasDoctorAccess && profile) {
           throw new Error('Account authenticated, but you are not assigned as a doctor to any clinical queue.');
         }
         navigate(redirectTarget || '/consultation');
       } else if (role === 'receptionist') {
-        const hasReceptionAccess =
+        const hasReceptionAccess = Boolean(
           profile?.staffAssignments?.some(
-            (a) => a.role?.toLowerCase() === 'receptionist' || a.role?.toLowerCase() === 'staff'
-          ) ||
-          profile?.roles?.some((r) => typeof r === 'string' && (r.toLowerCase().includes('reception') || r.toLowerCase().includes('admin'))) ||
-          profile?.permissions?.includes('queue:issue_walkin');
+            (a) => a.role?.toLowerCase() === 'receptionist' && Boolean(a.department?.id || a.hospitalId)
+          )
+        );
 
         if (!hasReceptionAccess && profile) {
           throw new Error('Account authenticated, but you are not assigned as a receptionist to any department.');

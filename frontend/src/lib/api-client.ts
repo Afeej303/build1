@@ -151,7 +151,11 @@ class ApiClient {
       } catch {
         // Not JSON
       }
-      const message = errorBody?.message || `Request to ${path} failed with HTTP ${res.status}`;
+      const retryAfter = res.headers.get('Retry-After');
+      let message = errorBody?.message || `Request to ${path} failed with HTTP ${res.status}`;
+      if (res.status === 429 && retryAfter) {
+        message = errorBody?.message || `Rate limit exceeded. Please retry after ${retryAfter} seconds.`;
+      }
       const code = errorBody?.code || errorBody?.error;
       throw new ApiError(message, {
         status: res.status,
@@ -508,8 +512,11 @@ class ApiClient {
 
   // POST /queues/:queueId/appointment-slots (Doctor publishes slot)
   public async publishSlot(queueId: string, startsAt: string, endsAt: string): Promise<any> {
+    if (!queueId || !queueId.trim()) {
+      throw new Error('A valid queue must be selected before publishing an availability slot.');
+    }
     const headers = await this.getAuthHeaders();
-    const res = await fetch(`${API_BASE_URL}/queues/${queueId}/appointment-slots`, {
+    const res = await fetch(`${API_BASE_URL}/queues/${encodeURIComponent(queueId.trim())}/appointment-slots`, {
       method: 'POST',
       headers,
       body: JSON.stringify({ startsAt, endsAt }),
@@ -522,12 +529,12 @@ class ApiClient {
   }
 
   // GET /queues/:queueId/appointment-slots?from=...&to=...
-  public async getAvailableSlots(queueId: string, from: string, to: string): Promise<{ items: any[] }> {
+  public async getAvailableSlots(queueId: string, from: string, to: string, signal?: AbortSignal): Promise<{ items: any[] }> {
     try {
       const headers = await this.getAuthHeaders();
       const res = await fetch(
         `${API_BASE_URL}/queues/${queueId}/appointment-slots?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
-        { headers }
+        { headers, signal }
       );
       if (res.ok) {
         return await res.json();
@@ -560,8 +567,8 @@ class ApiClient {
     return await res.json();
   }
 
-  // GET /users/me/appointments?from=...&to=...
-  public async getMyAppointments(from: string, to: string): Promise<{ items: any[] }> {
+  // GET /users/me/appointments?from=...&to=...&scope=patient
+  public async getMyAppointments(from: string, to: string, scope?: 'patient' | 'doctor', signal?: AbortSignal): Promise<{ items: any[] }> {
     let safeTo = to;
     try {
       const fromDate = new Date(from);
@@ -576,13 +583,19 @@ class ApiClient {
       // Keep original to if parsing fails
     }
     const headers = await this.getAuthHeaders();
+    const scopeParam = scope ? `&scope=${encodeURIComponent(scope)}` : '';
     const res = await fetch(
-      `${API_BASE_URL}/users/me/appointments?from=${encodeURIComponent(from)}&to=${encodeURIComponent(safeTo)}`,
-      { headers }
+      `${API_BASE_URL}/users/me/appointments?from=${encodeURIComponent(from)}&to=${encodeURIComponent(safeTo)}${scopeParam}`,
+      { headers, signal }
     );
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err.message || `Failed to fetch my appointments: ${res.status} [${err.code || 'ERROR'}]`);
+      const retryAfter = res.headers.get('Retry-After');
+      let msg = err.message || `Failed to fetch my appointments: ${res.status} [${err.code || 'ERROR'}]`;
+      if (res.status === 429 && retryAfter) {
+        msg = `Rate limit reached. Please wait ${retryAfter}s before retrying.`;
+      }
+      throw new Error(msg);
     }
     return await res.json();
   }
@@ -698,6 +711,87 @@ class ApiClient {
     return this.request<any>(`/admin/queues/${queueId}`, {
       method: 'PATCH',
       body: JSON.stringify({ doctorId }),
+    });
+  }
+
+  // POST /admin/hospitals/:hospitalId/provision-admin (Provision hospital administrator)
+  public async provisionHospitalAdmin(hospitalId: string, payload: { email: string; name: string }): Promise<any> {
+    return this.request<any>(`/admin/hospitals/${hospitalId}/provision-admin`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  // POST /admin/hospitals/:hospitalId/staff (Provision doctor or receptionist)
+  public async provisionStaff(
+    hospitalId: string,
+    payload: { email: string; name: string; role: 'doctor' | 'receptionist'; departmentId?: string }
+  ): Promise<any> {
+    return this.request<any>(`/admin/hospitals/${hospitalId}/staff`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  // PATCH /admin/hospitals/:hospitalId/staff/:userId/status (Update staff active/inactive/suspended status)
+  public async updateStaffStatus(
+    hospitalId: string,
+    userId: string,
+    status: 'ACTIVE' | 'INACTIVE' | 'SUSPENDED'
+  ): Promise<any> {
+    return this.request<any>(`/admin/hospitals/${hospitalId}/staff/${userId}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    });
+  }
+
+  // GET /admin/hospitals/:hospitalId/staff (List staff assigned to hospital)
+  public async getHospitalStaff(hospitalId: string): Promise<any[]> {
+    return this.request<any[]>(`/admin/hospitals/${hospitalId}/staff`);
+  }
+
+  // GET /admin/hospitals/:hospitalId/stats/appointments (Appointment activity statistics)
+  public async getHospitalAppointmentStats(hospitalId: string, date?: string): Promise<any> {
+    const safeDate = date || new Date().toISOString().split('T')[0];
+    return this.request<any>(`/admin/hospitals/${hospitalId}/stats/appointments?date=${encodeURIComponent(safeDate)}`);
+  }
+
+  // GET /admin/hospitals/:hospitalId/stats/doctors (Doctor activity statistics)
+  public async getHospitalDoctorStats(hospitalId: string, date?: string): Promise<any> {
+    const safeDate = date || new Date().toISOString().split('T')[0];
+    return this.request<any>(`/admin/hospitals/${hospitalId}/stats/doctors?date=${encodeURIComponent(safeDate)}`);
+  }
+
+  // GET /admin/hospitals/:hospitalId/stats/receptionists (Receptionist activity statistics)
+  public async getHospitalReceptionistStats(hospitalId: string, date?: string): Promise<any> {
+    const safeDate = date || new Date().toISOString().split('T')[0];
+    return this.request<any>(`/admin/hospitals/${hospitalId}/stats/receptionists?date=${encodeURIComponent(safeDate)}`);
+  }
+
+  // GET /admin/stats (Platform-wide operational statistics)
+  public async getAdminStats(): Promise<{
+    totalHospitals: number;
+    totalDepartments: number;
+    totalQueues: number;
+    totalUsers: number;
+    totalPatients: number;
+    activeSessions: number;
+  }> {
+    return this.request<any>('/admin/stats');
+  }
+
+  // POST /incidents (Frontend incident logging with diagnostic metadata)
+  public async reportIncident(payload: {
+    severity: string;
+    category: string;
+    affectedRoute?: string;
+    component?: string;
+    errorMessage?: string;
+    diagnostics?: Record<string, unknown>;
+  }): Promise<{ id: string; severity: string; category: string; status: string; createdAt: string }> {
+    return this.request<any>('/incidents', {
+      method: 'POST',
+      body: JSON.stringify(payload),
     });
   }
 }

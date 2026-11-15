@@ -95,7 +95,22 @@ export const DoctorConsole: React.FC = () => {
     queryFn: () => apiClient.getStaffQueues(),
   });
 
-  const queues = queuesData?.items || [];
+  // Deduplicate and consolidate assigned queues from staffAssignments & getStaffQueues
+  const queues = useMemo(() => {
+    const fromApi = queuesData?.items || [];
+    const fromAssignments = (profile?.staffAssignments || [])
+      .filter((a) => a.role?.toLowerCase() === 'doctor')
+      .flatMap((a) => a.queues || []);
+
+    const map = new Map<string, any>();
+    for (const q of [...fromApi, ...fromAssignments]) {
+      if (q && q.id && !map.has(q.id)) {
+        map.set(q.id, q);
+      }
+    }
+    return Array.from(map.values());
+  }, [queuesData, profile?.staffAssignments]);
+
   const [selectedQueueId, setSelectedQueueId] = useState<string>('');
 
   // Default to first assigned queue when loaded
@@ -251,6 +266,10 @@ export const DoctorConsole: React.FC = () => {
     mutationFn: async () => {
       setSlotPublishError(null);
       setSlotPublishSuccess(null);
+
+      if (!selectedQueueId || !selectedQueueId.trim()) {
+        throw new Error('Please select an assigned clinical queue before publishing availability slots.');
+      }
 
       const tzOffset = getIsoTimezoneOffset();
       const startsAt = `${slotDate}T${slotStartTime}:00${tzOffset}`;
@@ -640,6 +659,26 @@ export const DoctorConsole: React.FC = () => {
                       </button>
                     </div>
                   )}
+
+                  {/* Queue Selector for Multi-Queue Assignment */}
+                  <div>
+                    <label className="text-xs font-semibold text-muted-foreground">Target Clinical Queue</label>
+                    <select
+                      value={selectedQueueId}
+                      onChange={(e) => setSelectedQueueId(e.target.value)}
+                      className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-xs font-medium text-foreground cursor-pointer"
+                    >
+                      {queues.length === 0 ? (
+                        <option value="">No clinical queues assigned</option>
+                      ) : (
+                        queues.map((q) => (
+                          <option key={q.id} value={q.id}>
+                            {q.name} {q.roomLabel ? `(${q.roomLabel})` : ''}
+                          </option>
+                        ))
+                      )}
+                    </select>
+                  </div>
 
                   <div className="grid grid-cols-3 gap-3">
                     <div>

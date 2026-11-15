@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -351,6 +351,8 @@ function Dashboard() {
   const {
     data: patientsData,
     isLoading: isPatientsLoading,
+    isError: isPatientsError,
+    error: patientsError,
     refetch: refetchPatients,
   } = useQuery({
     queryKey: ['myPatients'],
@@ -366,33 +368,6 @@ function Dashboard() {
   const activePatient = patientsData?.items?.[0] || null;
   const hospital = queuesData?.items?.[0]?.hospital || null;
 
-  // If user has no patient profile yet, auto-register them under the discovered hospital
-  const registerPatientMutation = useMutation({
-    mutationFn: async () => {
-      if (!hospital?.id) throw new Error('Hospital discovery required for registration.');
-      const displayName = user?.user_metadata?.displayName || user?.email?.split('@')[0] || 'Patient';
-      const created = await apiClient.selfRegisterPatient(hospital.id, displayName);
-      if (user?.user_metadata?.phone || user?.user_metadata?.gender || user?.user_metadata?.dateOfBirth) {
-        await apiClient.updatePatientProfile(created.id, {
-          phone: user?.user_metadata?.phone,
-          gender: user?.user_metadata?.gender,
-          dateOfBirth: user?.user_metadata?.dateOfBirth,
-        });
-      }
-      return created;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['myPatients'] });
-    },
-  });
-
-  // Trigger self-registration if needed
-  useEffect(() => {
-    if (!isPatientsLoading && patientsData?.items?.length === 0 && hospital?.id && !registerPatientMutation.isPending) {
-      registerPatientMutation.mutate();
-    }
-  }, [patientsData, hospital, isPatientsLoading]);
-
   // Query C: Active Queue Tokens (10-second polling)
   const { data: tokensData } = useQuery({
     queryKey: ['myActiveTokens'],
@@ -402,10 +377,130 @@ function Dashboard() {
 
   const activeToken = tokensData?.items?.[0] || null;
 
+  const isStaff = isDoctor || isReceptionist || isHospitalAdmin || isSuperAdmin;
+  const hasVerifiedPatientProfile = Boolean(patientsData?.items && patientsData.items.length > 0);
+  const isConfirmedEmpty = Boolean(patientsData?.items && patientsData.items.length === 0);
+
+  // 1. Loading State: Never triggers premature barriers while request is in flight
+  if (isPatientsLoading) {
+    return (
+      <Page className="max-w-2xl py-12 text-center">
+        <div className="size-6 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+        <p className="text-xs text-muted-foreground font-mono">Verifying patient credentials...</p>
+      </Page>
+    );
+  }
+
+  // 2. Error State: Network or server failure shows a retryable error screen (never assumed empty)
+  if (isPatientsError) {
+    return (
+      <Page className="max-w-2xl py-12 text-center">
+        <div className="size-12 rounded-full bg-destructive/10 text-destructive flex items-center justify-center mx-auto mb-4">
+          <AlertCircle size={24} />
+        </div>
+        <h2 className="text-xl font-bold tracking-tight">Unable to Verify Patient Profile</h2>
+        <p className="text-xs text-muted-foreground mt-2 max-w-md mx-auto leading-relaxed">
+          {(patientsError as Error)?.message || 'An error occurred while communicating with the hospital patient registry.'}
+        </p>
+        <p className="text-[11px] text-muted-foreground mt-1 max-w-md mx-auto">
+          Please check your connection or retry verifying your credentials.
+        </p>
+        <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-2">
+          <button
+            type="button"
+            onClick={() => refetchPatients()}
+            className="press w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-semibold hover:opacity-90 cursor-pointer"
+          >
+            <RefreshCw size={13} />
+            <span>Retry Verification</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => signOut()}
+            className="press w-full sm:w-auto px-4 py-2 rounded-xl border border-border bg-card hover:bg-muted text-xs font-medium text-foreground transition-colors cursor-pointer"
+          >
+            Sign Out
+          </button>
+        </div>
+      </Page>
+    );
+  }
+
+  // 3. BARRIER A: Staff account confirmed to have NO personal patient profile (after successful empty response)
+  if (isStaff && isConfirmedEmpty) {
+    return (
+      <Page className="max-w-2xl">
+        <div className="surface p-6 sm:p-8 rounded-2xl border border-blue-500/30 bg-blue-500/[0.04] text-center shadow-lift">
+          <div className="size-12 rounded-full bg-blue-500/15 text-blue-600 dark:text-blue-400 flex items-center justify-center mx-auto mb-4">
+            <Stethoscope size={24} />
+          </div>
+          <h2 className="text-xl font-bold tracking-tight">Clinical Staff Account</h2>
+          <p className="text-xs text-muted-foreground mt-2 max-w-md mx-auto leading-relaxed">
+            You are signed in with a staff account ({profile?.name || user?.email}). This account does not hold a personal patient profile.
+          </p>
+          <p className="text-[11px] text-muted-foreground mt-1 max-w-md mx-auto">
+            To book appointments or track queue tokens for yourself, a verified patient record must be linked at hospital intake. Otherwise, please return to your operational workstation.
+          </p>
+          <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-2">
+            <Link
+              to={isDoctor ? '/consultation' : isReceptionist ? '/intake' : isSuperAdmin ? '/admin' : '/hospital-admin'}
+              className="press w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-semibold hover:opacity-90"
+            >
+              <span>Go to Workstation</span>
+              <ArrowRight size={13} />
+            </Link>
+            <button
+              type="button"
+              onClick={() => signOut()}
+              className="press w-full sm:w-auto px-4 py-2 rounded-xl border border-border bg-card hover:bg-muted text-xs font-medium text-foreground transition-colors cursor-pointer"
+            >
+              Sign Out
+            </button>
+          </div>
+        </div>
+      </Page>
+    );
+  }
+
+  // 4. BARRIER B: Unassigned account confirmed to have NO personal patient profile (after successful empty response)
+  if (isConfirmedEmpty) {
+    return (
+      <Page className="max-w-2xl">
+        <div className="surface p-6 sm:p-8 rounded-2xl border border-border text-center shadow-lift">
+          <div className="size-12 rounded-full bg-muted text-muted-foreground flex items-center justify-center mx-auto mb-4">
+            <User size={24} />
+          </div>
+          <h2 className="text-xl font-bold tracking-tight">No Patient Profile Linked</h2>
+          <p className="text-xs text-muted-foreground mt-2 max-w-md mx-auto leading-relaxed">
+            Your account ({user?.email}) is authenticated, but no verified patient record is linked at this hospital.
+          </p>
+          <p className="text-[11px] text-muted-foreground mt-1 max-w-md mx-auto">
+            Please visit hospital reception to issue a patient UHID, or complete patient intake registration.
+          </p>
+          <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-2">
+            <Link
+              to="/"
+              className="press w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl border border-border bg-card hover:bg-muted text-xs font-medium text-foreground transition-colors"
+            >
+              Back to Home
+            </Link>
+            <button
+              type="button"
+              onClick={() => signOut()}
+              className="press w-full sm:w-auto px-4 py-2 rounded-xl border border-border bg-card hover:bg-muted text-xs font-medium text-foreground transition-colors cursor-pointer"
+            >
+              Sign Out
+            </button>
+          </div>
+        </div>
+      </Page>
+    );
+  }
+
   return (
     <Page className="max-w-2xl">
-      {/* Staff Account Active Notice */}
-      {(isDoctor || isReceptionist || isHospitalAdmin || isSuperAdmin) && (
+      {/* Dual-Role Notice: Rendered only when a staff member also holds an active personal patient profile */}
+      {isStaff && hasVerifiedPatientProfile && (
         <div className="surface mb-6 p-4 rounded-2xl border border-blue-500/30 bg-blue-500/[0.06] flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
           <div className="flex items-center gap-3">
             <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-blue-500/15 text-blue-600 dark:text-blue-400">
@@ -413,10 +508,10 @@ function Dashboard() {
             </span>
             <div>
               <p className="text-xs font-semibold text-foreground">
-                Signed in with Clinical Staff Account: {profile?.name || user?.email}
+                Personal Patient Portal — Staff Account: {profile?.name || user?.email}
               </p>
               <p className="text-[11px] text-muted-foreground">
-                You are viewing the Patient Portal with your {isDoctor ? 'Doctor' : isReceptionist ? 'Receptionist' : 'Administrator'} login.
+                You are viewing personal patient tokens & appointments. UHID: {activePatient?.patientNumber}.
               </p>
             </div>
           </div>
@@ -425,7 +520,7 @@ function Dashboard() {
               to={isDoctor ? '/consultation' : isReceptionist ? '/intake' : isSuperAdmin ? '/admin' : '/hospital-admin'}
               className="press inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-primary text-primary-foreground text-xs font-semibold hover:opacity-90"
             >
-              <span>Go to Workstation</span>
+              <span>Workstation</span>
               <ArrowRight size={12} />
             </Link>
             <button
@@ -656,17 +751,25 @@ function BookingFormTab({
   }, [queues, selectedQueueId]);
 
   // Query available slots for the selected queue (today to +7 days in ISO format)
-  const todayIso = new Date().toISOString();
-  const nextWeekIso = new Date(Date.now() + 7 * 86400000).toISOString();
+  // Stabilize date parameters to prevent millisecond churn on re-renders
+  const { todayIso, nextWeekIso } = useMemo(() => {
+    const now = new Date();
+    const startOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
+    return {
+      todayIso: startOfDay.toISOString(),
+      nextWeekIso: new Date(startOfDay.getTime() + 7 * 86_400_000).toISOString(),
+    };
+  }, []);
 
   const {
     data: slotsData,
     isLoading: isSlotsLoading,
     error: slotsError,
   } = useQuery({
-    queryKey: ['availableSlots', selectedQueueId],
-    queryFn: () => apiClient.getAvailableSlots(selectedQueueId, todayIso, nextWeekIso),
+    queryKey: ['availableSlots', selectedQueueId, todayIso],
+    queryFn: ({ signal }) => apiClient.getAvailableSlots(selectedQueueId, todayIso, nextWeekIso, signal),
     enabled: Boolean(selectedQueueId),
+    staleTime: 30_000,
   });
 
   const slots = slotsData?.items || [];
@@ -840,16 +943,32 @@ function AppointmentsHistoryTab({
   const queryClient = useQueryClient();
 
   // Query appointments for last 7 days to next 21 days (28 days total, <= 31-day backend limit)
-  const fromIso = new Date(Date.now() - 7 * 86400000).toISOString();
-  const toIso = new Date(Date.now() + 21 * 86400000).toISOString();
+  // Stabilize date parameters to prevent millisecond churn and query key thrashing
+  const { fromIso, toIso } = useMemo(() => {
+    const now = new Date();
+    const startOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
+    return {
+      fromIso: new Date(startOfDay.getTime() - 7 * 86_400_000).toISOString(),
+      toIso: new Date(startOfDay.getTime() + 21 * 86_400_000).toISOString(),
+    };
+  }, []);
 
   const {
     data: appointmentsData,
     isLoading,
+    isError,
+    error,
     refetch,
+    isRefetching,
   } = useQuery({
-    queryKey: ['myAppointments'],
-    queryFn: () => apiClient.getMyAppointments(fromIso, toIso),
+    queryKey: ['myAppointments', { from: fromIso, to: toIso, scope: 'patient' }],
+    queryFn: ({ signal }) => apiClient.getMyAppointments(fromIso, toIso, 'patient', signal),
+    staleTime: 30_000,
+    retry: (failureCount, err: any) => {
+      // Do not auto-retry client errors (400, 401, 403, 404) or rate limits (429) rapidly
+      if (err?.status && err.status >= 400 && err.status < 500) return false;
+      return failureCount < 2;
+    },
   });
 
   const cancelMutation = useMutation({
@@ -867,6 +986,27 @@ function AppointmentsHistoryTab({
       <Card className="py-16 text-center">
         <div className="size-6 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-3" />
         <p className="text-xs text-muted-foreground font-mono">Fetching appointment records...</p>
+      </Card>
+    );
+  }
+
+  if (isError) {
+    return (
+      <Card className="py-12 text-center border-destructive/20 bg-destructive/5">
+        <AlertCircle className="size-8 text-destructive mx-auto mb-2" />
+        <p className="font-semibold text-sm text-destructive">Failed to Load Appointments</p>
+        <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">
+          {error instanceof Error ? error.message : 'Unable to retrieve your appointment records.'}
+        </p>
+        <Btn
+          variant="soft"
+          onClick={() => refetch()}
+          loading={isRefetching}
+          className="mt-4 gap-2 mx-auto"
+        >
+          <RefreshCw className="size-3.5" />
+          Retry
+        </Btn>
       </Card>
     );
   }

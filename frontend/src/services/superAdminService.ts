@@ -33,6 +33,7 @@ export interface PlatformUser {
   permissions?: string[];
   hospitalId?: string | null;
   hospitalName?: string | null;
+  staffAssignments?: any[];
   phone?: string;
   createdAt?: string;
   updatedAt?: string;
@@ -119,7 +120,8 @@ export async function fetchUsers(
       ? [u.role]
       : u.raw_user_meta_data?.role
       ? [u.raw_user_meta_data.role]
-      : ['patient'],
+      : [],
+    staffAssignments: Array.isArray(u.staffAssignments) ? u.staffAssignments : [],
     permissions: Array.isArray(u.permissions) ? u.permissions : [],
     hospitalId: u.hospitalId || u.hospital_id || null,
     hospitalName: u.hospitalName || u.hospital?.name || null,

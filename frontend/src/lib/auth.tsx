@@ -1,8 +1,28 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
+import { useQueryClient } from '@tanstack/react-query';
 import { supabase, isSupabaseConfigured } from './supabase';
 import { apiClient } from './api-client';
 import type { UserProfile } from '../types/contract';
+
+const USER_SPECIFIC_STORAGE_KEYS = [
+  'hqms_hospital_incidents',
+  'hqms_web_incidents',
+  'hqms-state-v1',
+  'hqms-minimal-v1',
+  'hqms-minimal-v2',
+  'hqms-minimal-v3',
+];
+
+function clearUserSpecificState() {
+  USER_SPECIFIC_STORAGE_KEYS.forEach((key) => {
+    try {
+      localStorage.removeItem(key);
+    } catch {
+      // Ignore storage errors in private browsing/sandboxed contexts
+    }
+  });
+}
 
 interface AuthContextType {
   session: Session | null;
@@ -25,10 +45,14 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const queryClient = useQueryClient();
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Track previous authenticated user ID to detect genuine account switching
+  const previousUserIdRef = React.useRef<string | null>(null);
 
   // In-memory cache and in-flight deduplication to prevent 429 flood
   const inFlightRef = React.useRef<Promise<UserProfile | null> | null>(null);
@@ -61,36 +85,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return data;
       } catch (err) {
         console.warn('Failed to load profile from /users/me:', err);
-        // Resilient fallback without re-querying Supabase network (prevents 429 loop)
+        // Resilient fallback without guessing roles from email substrings
         const activeUser = explicitUser || user || session?.user || null;
         if (activeUser) {
           const email = activeUser.email || '';
-          const isSuper = email.includes('super') || email.includes('admin-4d17');
-          const isHospAdmin = email.includes('hospital-admin') || email.includes('admin');
-          const isDoc = email.includes('doctor');
-          const isRec = email.includes('receptionist');
-
-          const fallbackRoles: string[] = isSuper
-            ? ['super_admin']
-            : isHospAdmin
-            ? ['hospital_admin']
-            : isDoc
-            ? ['doctor']
-            : isRec
-            ? ['receptionist']
-            : ['patient'];
+          const explicitRoles = Array.isArray(activeUser.user_metadata?.roles)
+            ? activeUser.user_metadata.roles
+            : activeUser.user_metadata?.role
+            ? [activeUser.user_metadata.role]
+            : [];
 
           const fallbackProfile: UserProfile = {
             id: activeUser.id,
             email,
-            name: activeUser.user_metadata?.full_name || email.split('@')[0],
-            roles: fallbackRoles,
-            permissions: isSuper ? ['audit:read', 'hospitals:write', 'users:write'] : [],
-            staffAssignments: isDoc
-              ? [{ role: 'doctor', hospitalId: 'hosp-1', department: { id: 'dept-1', name: 'General Medicine' }, queues: [] }]
-              : isRec
-              ? [{ role: 'receptionist', hospitalId: 'hosp-1', department: { id: 'dept-1', name: 'Intake Desk' }, queues: [] }]
-              : [],
+            name: activeUser.user_metadata?.full_name || email.split('@')[0] || 'User',
+            roles: explicitRoles,
+            permissions: [],
+            staffAssignments: [],
           };
           profileCacheRef.current.set(accessToken, fallbackProfile);
           setProfile(fallbackProfile);
@@ -115,10 +126,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Single source of truth: onAuthStateChange handles initial session and all updates
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, currentSession) => {
+    } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
+      const newUserId = currentSession?.user?.id ?? null;
+      const previousUserId = previousUserIdRef.current;
+
+      // Handle selective cache invalidation on genuine account switch or logout
+      if (previousUserId && newUserId && previousUserId !== newUserId) {
+        // Genuine account switch: clear queryClient and user drafts
+        queryClient.clear();
+        clearUserSpecificState();
+        profileCacheRef.current.clear();
+      } else if (!newUserId && previousUserId) {
+        // Logout event
+        queryClient.clear();
+        clearUserSpecificState();
+        profileCacheRef.current.clear();
+      }
+      // Note: Same-user token refreshes keep queryClient cache warm
+
+      previousUserIdRef.current = newUserId;
       setSession(currentSession);
       const currentUser = currentSession?.user ?? null;
       setUser(currentUser);
+
       if (currentSession?.access_token) {
         await fetchProfile(currentSession.access_token, currentUser);
       } else {
@@ -132,7 +162,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => {
       subscription.unsubscribe();
     };
-  }, []);
+  }, [queryClient]);
 
   const signIn = async (email: string, password: string) => {
     setLoading(true);
@@ -190,7 +220,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setSession(null);
       setUser(null);
       setProfile(null);
-      sessionStorage.clear();
+      previousUserIdRef.current = null;
+      profileCacheRef.current.clear();
+      queryClient.clear();
+      clearUserSpecificState();
     } finally {
       setLoading(false);
     }
@@ -201,39 +234,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return await fetchProfile(currentToken);
   };
 
-  // Determine role access based on staffAssignments, roles, and permissions
+  // 1. Super Admin: Explicit global super_admin role
   const isSuperAdmin = Boolean(
     profile?.roles?.some(
-      (r) => typeof r === 'string' && (r.toLowerCase().includes('super') || r.toLowerCase() === 'super_admin')
-    ) || profile?.permissions?.includes('audit:read')
+      (r) => typeof r === 'string' && (r.toLowerCase() === 'super_admin' || r.toLowerCase() === 'superadmin')
+    )
   );
 
+  // 2. Hospital Admin: Verified structured staff assignment with role === 'hospital_admin' and non-empty hospitalId
+  // M2 confirmed contract: staffAssignments contains { role: 'hospital_admin', hospitalId, department: null, queues: [] }
+  // Note: profile.hospitalId alone never grants Hospital Admin access. Global role alone without structured assignment never grants access.
   const isHospitalAdmin = Boolean(
-    isSuperAdmin ||
-      profile?.roles?.some((r) => typeof r === 'string' && r.toLowerCase().includes('admin')) ||
-      profile?.staffAssignments?.some((a) => a.role?.toLowerCase().includes('admin')) ||
-      user?.email?.toLowerCase().includes('admin')
+    profile?.staffAssignments?.some(
+      (a) => a.role?.toLowerCase() === 'hospital_admin' && Boolean(a.hospitalId && typeof a.hospitalId === 'string' && a.hospitalId.trim().length > 0)
+    )
   );
 
   const isAdmin = isSuperAdmin || isHospitalAdmin;
 
+  // 3. Clinical Doctor: Active staff assignment with role === 'doctor' and at least one assigned queue
   const isDoctor = Boolean(
     profile?.staffAssignments?.some(
-      (a) => a.role?.toLowerCase() === 'doctor' || (a.queues && a.queues.length > 0)
-    ) ||
-      profile?.roles?.some((r) => typeof r === 'string' && (r.toLowerCase().includes('doctor') || r.toLowerCase().includes('admin'))) ||
-      profile?.permissions?.includes('queue:call_next')
+      (a) => a.role?.toLowerCase() === 'doctor' && Array.isArray(a.queues) && a.queues.length > 0
+    )
   );
 
+  // 4. Receptionist: Active staff assignment with role === 'receptionist' and department link
   const isReceptionist = Boolean(
     profile?.staffAssignments?.some(
-      (a) => a.role?.toLowerCase() === 'receptionist' || a.role?.toLowerCase() === 'staff'
-    ) ||
-      profile?.roles?.some((r) => typeof r === 'string' && (r.toLowerCase().includes('reception') || r.toLowerCase().includes('admin'))) ||
-      profile?.permissions?.includes('queue:issue_walkin')
+      (a) => a.role?.toLowerCase() === 'receptionist' && Boolean(a.department?.id || a.hospitalId)
+    )
   );
 
-  const isPatient = Boolean(user);
+  // 5. Patient: Explicit patient role (Never inferred from user presence or lack of staff roles)
+  const isPatient = Boolean(
+    profile?.roles?.some((r) => typeof r === 'string' && r.toLowerCase() === 'patient')
+  );
 
   return (
     <AuthContext.Provider

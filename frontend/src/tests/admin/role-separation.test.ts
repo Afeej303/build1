@@ -18,36 +18,33 @@ import type { UserProfile } from '../../types/contract';
 export function evaluateUserRoles(profile: Partial<UserProfile> | null, userEmail?: string | null) {
   const isSuperAdmin = Boolean(
     profile?.roles?.some(
-      (r) => typeof r === 'string' && (r.toLowerCase().includes('super') || r.toLowerCase() === 'super_admin')
-    ) || profile?.permissions?.includes('audit:read')
+      (r) => typeof r === 'string' && (r.toLowerCase() === 'super_admin' || r.toLowerCase() === 'superadmin')
+    )
   );
 
   const isHospitalAdmin = Boolean(
-    isSuperAdmin ||
-      profile?.roles?.some((r) => typeof r === 'string' && r.toLowerCase().includes('admin')) ||
-      profile?.staffAssignments?.some((a) => a.role?.toLowerCase().includes('admin')) ||
-      userEmail?.toLowerCase().includes('admin')
+    profile?.staffAssignments?.some(
+      (a) => a.role?.toLowerCase() === 'hospital_admin' && Boolean(a.hospitalId && typeof a.hospitalId === 'string' && a.hospitalId.trim().length > 0)
+    )
   );
 
   const isAdmin = isSuperAdmin || isHospitalAdmin;
 
   const isDoctor = Boolean(
     profile?.staffAssignments?.some(
-      (a) => a.role?.toLowerCase() === 'doctor' || (a.queues && a.queues.length > 0)
-    ) ||
-      profile?.roles?.some((r) => typeof r === 'string' && (r.toLowerCase().includes('doctor') || r.toLowerCase().includes('admin'))) ||
-      profile?.permissions?.includes('queue:call_next')
+      (a) => a.role?.toLowerCase() === 'doctor' && Array.isArray(a.queues) && a.queues.length > 0
+    )
   );
 
   const isReceptionist = Boolean(
     profile?.staffAssignments?.some(
-      (a) => a.role?.toLowerCase() === 'receptionist' || a.role?.toLowerCase() === 'staff'
-    ) ||
-      profile?.roles?.some((r) => typeof r === 'string' && (r.toLowerCase().includes('reception') || r.toLowerCase().includes('admin'))) ||
-      profile?.permissions?.includes('queue:issue_walkin')
+      (a) => a.role?.toLowerCase() === 'receptionist' && Boolean(a.department?.id || a.hospitalId)
+    )
   );
 
-  const isPatient = Boolean(userEmail || profile?.id);
+  const isPatient = Boolean(
+    profile?.roles?.some((r) => typeof r === 'string' && r.toLowerCase() === 'patient')
+  );
 
   return {
     isSuperAdmin,
@@ -102,7 +99,7 @@ export function evaluateRouteAccess(
   }
 
   if (requiredRole === 'hospital_admin') {
-    if (!(roles.isHospitalAdmin || roles.isSuperAdmin)) {
+    if (!roles.isHospitalAdmin) {
       return { allowed: false, reason: 'forbidden', barrier: 'Hospital Facility Admin Required' };
     }
     return { allowed: true };
@@ -161,14 +158,14 @@ export function runRoleSeparationTests(): { passed: number; failed: number; asse
   };
   const superRoles = evaluateUserRoles(superAdminProfile, superAdminProfile.email);
   assert(superRoles.isSuperAdmin === true, 'Super Admin persona must have isSuperAdmin === true');
-  assert(superRoles.isHospitalAdmin === true, 'Super Admin persona inherits facility supervision isHospitalAdmin === true');
+  assert(superRoles.isHospitalAdmin === false, 'Super Admin persona does not inherit facility supervision isHospitalAdmin');
   assert(superRoles.isAdmin === true, 'Super Admin persona has isAdmin === true');
 
   const saToAdmin = evaluateRouteAccess('super_admin', validSession, superAdminProfile, superAdminProfile.email, '/admin');
   assert(saToAdmin.allowed === true, 'Super Admin can access /admin');
 
   const saToHospAdmin = evaluateRouteAccess('hospital_admin', validSession, superAdminProfile, superAdminProfile.email, '/hospital-admin');
-  assert(saToHospAdmin.allowed === true, 'Super Admin can access /hospital-admin for platform oversight');
+  assert(saToHospAdmin.allowed === false, 'Super Admin without facility assignment cannot access /hospital-admin');
 
   // --------------------------------------------------------------------------
   // Persona 2: Hospital Administrator (Scoped facility admin)
@@ -177,6 +174,15 @@ export function runRoleSeparationTests(): { passed: number; failed: number; asse
     id: 'user-hosp-admin-1',
     email: 'admin@stjudes.org',
     roles: ['hospital_admin'],
+    hospitalId: 'hosp-1',
+    staffAssignments: [
+      {
+        role: 'hospital_admin',
+        hospitalId: 'hosp-1',
+        department: null,
+        queues: [],
+      },
+    ],
     permissions: ['queues:manage', 'departments:manage'],
   };
   const hospRoles = evaluateUserRoles(hospitalAdminProfile, hospitalAdminProfile.email);

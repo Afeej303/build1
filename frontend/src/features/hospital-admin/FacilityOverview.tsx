@@ -1,4 +1,5 @@
 import React from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { motion } from 'motion/react';
 import {
   Building2,
@@ -21,6 +22,7 @@ import {
 import { PageHeader, StatCard, AwaitingBackendBadge } from '../../components/admin';
 import { Btn, ease, Card } from '../../components/hq/ui';
 import { hospitalAdminService } from '../../services/hospitalAdminService';
+import { apiClient } from '../../lib/api-client';
 import type { Hospital } from '../../services/types';
 import { cn } from '../../lib/utils';
 
@@ -50,6 +52,15 @@ export const FacilityOverview: React.FC<FacilityOverviewProps> = ({
 }) => {
   const stats = hospitalAdminService.computeFacilityStats(hospital);
   const departments = hospital.departments || [];
+
+  // Live operational statistics from backend
+  const todayDate = new Date().toISOString().split('T')[0];
+  const { data: appointmentStats } = useQuery({
+    queryKey: ['hospital-stats-appointments', hospital?.id, todayDate],
+    queryFn: () => apiClient.getHospitalAppointmentStats(hospital.id, todayDate),
+    enabled: Boolean(hospital?.id),
+    staleTime: 30_000,
+  });
 
   // Find first active queue slug for testing Public TV Signage
   let firstQueueSlug = 'm1-demo-4d1422a8';
@@ -141,6 +152,7 @@ export const FacilityOverview: React.FC<FacilityOverviewProps> = ({
             </p>
             <p className="text-[11px] text-muted-foreground">
               {stats.totalActiveQueues} departments operational
+              {appointmentStats?.total !== undefined ? ` • ${appointmentStats.total} appointments today` : ''}
             </p>
           </div>
         </div>

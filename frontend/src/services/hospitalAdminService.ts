@@ -352,29 +352,78 @@ export class HospitalAdminService {
   }
 
   // ============================================================================
-  // Phase B Service Integration Points (Pending M2 Backend Endpoints)
-  // Strict requirement: Never fake mock success responses!
+  // Phase B Service Integration Points (Wired to Live M2 Backend Endpoints)
   // ============================================================================
 
   /**
-   * Phase B: Provision a new Hospital Administrator
-   * Target endpoint: POST /admin/hospitals/:id/admins
+   * Provision a new Hospital Administrator
+   * Target endpoint: POST /admin/hospitals/:id/provision-admin
    */
   async provisionHospitalAdmin(hospitalId: string, payload: ProvisionHospitalAdminPayload): Promise<StaffUser> {
     if (!hospitalId) throw new Error('Hospital ID is required.');
-    throw new ApiError('Hospital Administrator provisioning is currently unavailable.', {
-      code: 'AWAITING_M2_API',
+    const res = await apiClient.provisionHospitalAdmin(hospitalId, {
+      email: payload.email,
+      name: payload.name,
     });
+    return {
+      id: res.userId,
+      email: res.email,
+      name: res.name,
+      status: 'ACTIVE',
+      roles: ['hospital_admin'],
+      permissions: ['*'],
+      hospitalId: res.hospitalId,
+      createdAt: new Date().toISOString(),
+    };
   }
 
   /**
    * Provision a Doctor or Receptionist staff member
+   * Target endpoint: POST /admin/hospitals/:id/staff
    */
   async provisionStaffUser(hospitalId: string, payload: ProvisionStaffPayload): Promise<StaffUser> {
     if (!hospitalId) throw new Error('Hospital ID is required.');
-    throw new ApiError('Staff member provisioning is currently unavailable.', {
-      code: 'AWAITING_M2_API',
+    const res = await apiClient.provisionStaff(hospitalId, {
+      email: payload.email,
+      name: payload.name,
+      role: payload.role,
+      departmentId: payload.departmentId,
     });
+    return {
+      id: res.userId,
+      email: res.email,
+      name: res.name,
+      status: 'ACTIVE',
+      roles: [res.role],
+      permissions: [],
+      hospitalId: res.hospitalId,
+      staffAssignments: res.departmentId
+        ? [{ role: res.role, hospitalId: res.hospitalId, department: { id: res.departmentId, name: '' }, queues: [] }]
+        : [{ role: res.role, hospitalId: res.hospitalId, department: null, queues: [] }],
+      createdAt: new Date().toISOString(),
+    };
+  }
+
+  /**
+   * Update staff active/inactive/suspended status
+   * Target endpoint: PATCH /admin/hospitals/:id/staff/:userId/status
+   */
+  async updateStaffStatus(
+    hospitalId: string,
+    userId: string,
+    status: 'ACTIVE' | 'INACTIVE' | 'SUSPENDED'
+  ): Promise<StaffUser> {
+    if (!hospitalId || !userId) throw new Error('Hospital ID and User ID are required.');
+    const res = await apiClient.updateStaffStatus(hospitalId, userId, status);
+    return {
+      id: res.id,
+      email: res.email,
+      name: res.name,
+      status: res.status,
+      roles: [],
+      permissions: [],
+      hospitalId,
+    };
   }
 
   /**
@@ -399,12 +448,34 @@ export class HospitalAdminService {
 
   /**
    * Submit diagnostic web incident
+   * Target endpoint: POST /incidents
    */
   async submitFacilityIncident(hospitalId: string, payload: CreateIncidentPayload): Promise<WebIncident> {
     if (!hospitalId) throw new Error('Hospital ID is required.');
-    throw new ApiError('Incident submission is currently unavailable.', {
-      code: 'AWAITING_M2_API',
+    const res = await apiClient.reportIncident({
+      severity: payload.severity || 'MEDIUM',
+      category: payload.category || 'OTHER',
+      component: payload.component,
+      errorMessage: payload.description || payload.title,
+      diagnostics: {
+        hospitalId,
+        title: payload.title,
+        description: payload.description,
+        timestamp: new Date().toISOString(),
+      },
     });
+    return {
+      id: res.id,
+      hospitalName: hospitalId,
+      reporterEmail: 'hospital-admin@hospital.org',
+      title: payload.title,
+      severity: payload.severity as any,
+      category: payload.category as any,
+      description: payload.description,
+      component: payload.component || 'Facility Terminal',
+      status: res.status as any,
+      createdAt: res.createdAt,
+    };
   }
 
   /**
