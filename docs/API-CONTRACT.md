@@ -670,4 +670,8 @@ This section documents the administrative and operational endpoints supporting m
 | 401 | `AUTHENTICATION_REQUIRED` | Missing, expired, or invalid Supabase bearer token. |
 | 403 | `INSUFFICIENT_PERMISSION` | Caller does not possess the required global role or tenant scope. |
 | 404 | `RESOURCE_NOT_FOUND` | Specified hospital, department, queue, user, or incident does not exist within the caller's authorized scope. |
-| 429 | `TOO_MANY_REQUESTS` | Rate limit exceeded on `POST /incidents` (max 10 submissions/min). Client should back off. |
+| 429 | `TOO_MANY_REQUESTS` | Rate limit exceeded. The `Retry-After` header gives the wait time in seconds. |
+
+Appointment reads use the default route limit (60 requests per minute by default). The additional `auth` bucket applies only to the NestJS authentication controller, which is unavailable in Supabase mode. Supabase handles its own provider-side limits. Rejected validation attempts count against the applicable buckets because throttling runs before DTO validation. The limit for `POST /incidents` remains 10 submissions per minute.
+
+On 400, correct the request before retrying. On 429, pause polling and retries for the indicated interval, then resume the usual cadence. If no header is available, use bounded exponential backoff with jitter. Avoid automatically retrying mutations unless the operation is known to be idempotent.

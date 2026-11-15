@@ -24,6 +24,7 @@ function defaultErrorCode(status: number) {
     401: 'AUTHENTICATION_REQUIRED',
     403: 'INSUFFICIENT_PERMISSION',
     404: 'RESOURCE_NOT_FOUND',
+    429: 'TOO_MANY_REQUESTS',
   };
   return codes[status] ? { code: codes[status] } : {};
 }
@@ -38,6 +39,14 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     const request = ctx.getRequest<Request>();
 
     const payload = this.buildErrorPayload(exception, request.url);
+
+    if (payload.statusCode === HttpStatus.TOO_MANY_REQUESTS) {
+      const authRetryAfter = response.getHeader('Retry-After-auth');
+      if (authRetryAfter !== undefined && !response.hasHeader('Retry-After')) {
+        response.setHeader('Retry-After', authRetryAfter);
+      }
+      response.removeHeader('Retry-After-auth');
+    }
 
     if (payload.statusCode >= 500) {
       const errorMsg = exception instanceof Error ? exception.message : 'Unknown internal error';

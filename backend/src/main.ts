@@ -45,6 +45,7 @@ export function configureApp(app: NestExpressApplication): AppConfig {
       callback(new Error('Origin not allowed by CORS'), false);
     },
     credentials: true,
+    exposedHeaders: ['Retry-After'],
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: [
       'Content-Type',

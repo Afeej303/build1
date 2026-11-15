@@ -4,6 +4,7 @@ import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AuditModule } from './audit/audit.module.js';
 import { AuthModule } from './auth/auth.module.js';
+import { AuthController } from './auth/auth.controller.js';
 import { CommonModule } from './common/common.module.js';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter.js';
 import { CsrfGuard } from './common/guards/csrf.guard.js';
@@ -47,10 +48,11 @@ import { UsersModule } from './users/users.module.js';
           authTtlMs: 60_000,
           authLimit: 10,
         };
+        const skipInTests = () =>
+          process.env.NODE_ENV === 'test' &&
+          process.env.ENABLE_RATE_LIMIT_IN_TESTS !== 'true';
         return {
-          skipIf: () =>
-            process.env.NODE_ENV === 'test' &&
-            process.env.ENABLE_RATE_LIMIT_IN_TESTS !== 'true',
+          skipIf: skipInTests,
           throttlers: [
             {
               name: 'default',
@@ -61,6 +63,7 @@ import { UsersModule } from './users/users.module.js';
               name: 'auth',
               ttl: throttle.authTtlMs,
               limit: throttle.authLimit,
+              skipIf: (context) => skipInTests() || context.getClass() !== AuthController,
             },
           ],
         };
