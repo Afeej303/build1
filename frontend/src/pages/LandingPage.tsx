@@ -213,7 +213,7 @@ export const LandingPage: React.FC = () => {
                     Hall OPD Status
                   </span>
                   <span className="px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-300 font-mono text-[11px]">
-                    {publicQueue?.roomLabel || 'Demo Room 1'}
+                    {publicQueue?.roomLabel || 'Room 101'}
                   </span>
                 </div>
 

@@ -127,6 +127,26 @@ export class SupabaseIdentityService {
       });
     }
 
+    // Auto-provision Super Admin role for primary platform administrator
+    if (email === 'muhammedparad0485@gmail.com') {
+      try {
+        const superAdminRole = await this.prisma.role.findFirst({
+          where: { scope: 'GLOBAL', slug: 'super_admin', organizationId: null },
+          select: { id: true },
+        });
+        if (superAdminRole) {
+          await this.prisma.userRole.upsert({
+            where: { userId_roleId: { userId: user.id, roleId: superAdminRole.id } },
+            update: {},
+            create: { userId: user.id, roleId: superAdminRole.id },
+          });
+        }
+      } catch (err) {
+        // Log silently to avoid interrupting authentication
+        console.warn('Super admin assignment warning:', err);
+      }
+    }
+
     return {
       id: user.id,
       name: user.name,

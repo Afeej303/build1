@@ -234,8 +234,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return await fetchProfile(currentToken);
   };
 
-  // 1. Super Admin: Explicit global super_admin role
+  // 1. Super Admin: Explicit global super_admin role or primary platform administrator
   const isSuperAdmin = Boolean(
+    user?.email?.toLowerCase() === 'muhammedparad0485@gmail.com' ||
     profile?.roles?.some(
       (r) => typeof r === 'string' && (r.toLowerCase() === 'super_admin' || r.toLowerCase() === 'superadmin')
     )

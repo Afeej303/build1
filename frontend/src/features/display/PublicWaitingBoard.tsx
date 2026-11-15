@@ -153,7 +153,7 @@ export const PublicWaitingBoard: React.FC = () => {
           </span>
           <h2 className="text-base font-semibold">
             {queueStatus?.departmentName || 'General Medicine'} •{' '}
-            {queueStatus?.roomLabel || 'Demo Room 1'}
+            {queueStatus?.roomLabel || 'Room 101'}
           </h2>
         </div>
 
@@ -193,7 +193,7 @@ export const PublicWaitingBoard: React.FC = () => {
               Now Serving In Consultation
             </span>
             <span className="font-semibold text-sm px-3.5 py-1 rounded-full bg-ink-foreground/10 font-mono">
-              {queueStatus?.roomLabel || 'Demo Room 1'}
+              {queueStatus?.roomLabel || 'Room 101'}
             </span>
           </div>
 
@@ -222,7 +222,7 @@ export const PublicWaitingBoard: React.FC = () => {
                   <Volume2 className="size-8 animate-bounce" />
                   <span>
                     Token {currentDisplayNumber} — Please proceed to{' '}
-                    {queueStatus?.roomLabel || 'Demo Room 1'}
+                    {queueStatus?.roomLabel || 'Room 101'}
                   </span>
                 </motion.div>
               )}

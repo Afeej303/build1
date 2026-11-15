@@ -368,51 +368,6 @@ export const StaffLoginPage: React.FC = () => {
                   required
                 />
 
-                <div className="flex items-center justify-between pt-1">
-                  {role === 'admin' ? (
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-mono text-muted-foreground">Demo Admins:</span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEmail(M1_SUPER_ADMIN.email);
-                          setPassword(M1_SUPER_ADMIN.password);
-                        }}
-                        className="text-[11px] font-mono text-primary hover:underline cursor-pointer"
-                      >
-                        ⚡ Super Admin
-                      </button>
-                      <span className="text-muted-foreground text-xs">•</span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEmail(M1_HOSPITAL_ADMIN.email);
-                          setPassword(M1_HOSPITAL_ADMIN.password);
-                        }}
-                        className="text-[11px] font-mono text-primary hover:underline cursor-pointer"
-                      >
-                        ⚡ Hospital Admin
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (role === 'doctor') {
-                          setEmail(M1_DOCTOR.email);
-                          setPassword(M1_DOCTOR.password);
-                        } else {
-                          setEmail(M1_RECEPTIONIST.email);
-                          setPassword(M1_RECEPTIONIST.password);
-                        }
-                      }}
-                      className="text-[11px] font-mono text-primary hover:underline cursor-pointer"
-                    >
-                      ⚡ Auto-fill {role === 'doctor' ? 'Doctor' : 'Receptionist'} credentials
-                    </button>
-                  )}
-                </div>
-
                 <Btn
                   type="submit"
                   variant="ink"

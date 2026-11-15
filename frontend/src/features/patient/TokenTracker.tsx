@@ -206,33 +206,7 @@ function AuthScreen() {
               onChange={(e) => setSignInPassword(e.target.value)}
               required
             />
-            <div className="flex items-center justify-between gap-2 pt-0.5">
-              <span className="text-[10px] font-mono text-muted-foreground">Demo Accounts:</span>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSignInEmail(M1_PATIENT_A.email);
-                    setSignInPassword(M1_PATIENT_A.password);
-                  }}
-                  className="text-[11px] font-mono text-primary hover:underline cursor-pointer"
-                >
-                  ⚡ Patient A
-                </button>
-                <span className="text-muted-foreground text-xs">•</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSignInEmail(M1_PATIENT_B.email);
-                    setSignInPassword(M1_PATIENT_B.password);
-                  }}
-                  className="text-[11px] font-mono text-primary hover:underline cursor-pointer"
-                >
-                  ⚡ Patient B
-                </button>
-              </div>
-            </div>
-            <Btn type="submit" variant="ink" size="lg" loading={loading} className="w-full mt-3">
+            <Btn type="submit" variant="ink" size="lg" loading={loading} className="w-full mt-4">
               Sign In to Patient Portal <ArrowRight size={16} />
             </Btn>
             <div className="pt-4 text-center">
