@@ -56,6 +56,10 @@ export class AuthorizationLookupService {
       const normEmail = userRecord?.email?.toLowerCase();
       if (normEmail === 'muhammedparad0485@gmail.com' || normEmail === 'muhammedparad@gmail.com') {
         roleSet.add('super_admin');
+        roleSet.add('hospital_admin');
+        roleSet.add('doctor');
+        roleSet.add('receptionist');
+        roleSet.add('admin');
         permissionSet.add('audit:read');
         permissionSet.add('user:read');
         permissionSet.add('user:write');

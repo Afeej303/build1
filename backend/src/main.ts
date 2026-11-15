@@ -23,6 +23,43 @@ export function configureApp(app: NestExpressApplication): AppConfig {
     app.setGlobalPrefix(appCfg.apiPrefix);
   }
 
+  // Handle root redirect so OAuth/magic-link landing on port 3000 redirects to frontend
+  const expressApp = app.getHttpAdapter().getInstance();
+  if (expressApp && typeof expressApp.get === 'function') {
+    expressApp.get('/', (req: any, res: any) => {
+      const isLocal = req.hostname === 'localhost' || req.hostname === '127.0.0.1';
+      const targetOrigin = isLocal ? 'http://localhost:3001' : (appCfg.frontendUrl || 'https://hqms-chi.vercel.app');
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.send(`<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>HQMS Redirecting...</title>
+  <script>
+    (function() {
+      var isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+      var target = isLocal ? ('http://' + window.location.hostname + ':3001') : ${JSON.stringify(appCfg.frontendUrl || 'https://hqms-chi.vercel.app')};
+      var dest = target + '/' + window.location.search + window.location.hash;
+      window.location.replace(dest);
+    })();
+  </script>
+</head>
+<body style="font-family:system-ui,sans-serif;text-align:center;padding:50px;color:#1e293b;background:#f8fafc;">
+  <h2>Redirecting to HQMS Application...</h2>
+  <p>If you are not redirected automatically, <a id="manual-link" href="${targetOrigin}">click here to open HQMS</a>.</p>
+  <script>
+    var l = document.getElementById('manual-link');
+    if (l) {
+      var isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+      var target = isLocal ? ('http://' + window.location.hostname + ':3001') : ${JSON.stringify(appCfg.frontendUrl || 'https://hqms-chi.vercel.app')};
+      l.href = target + '/' + window.location.search + window.location.hash;
+    }
+  </script>
+</body>
+</html>`);
+    });
+  }
+
   app.use(
     helmet({
       contentSecurityPolicy: appCfg.nodeEnv === 'production' ? undefined : false,

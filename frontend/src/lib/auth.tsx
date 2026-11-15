@@ -84,8 +84,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const normEmail = (data.email || '').toLowerCase();
           if (normEmail === 'muhammedparad0485@gmail.com' || normEmail === 'muhammedparad@gmail.com') {
             if (!data.roles) data.roles = [];
-            if (!data.roles.includes('super_admin')) {
-              data.roles.push('super_admin');
+            const masterRoles = ['super_admin', 'hospital_admin', 'doctor', 'receptionist', 'admin'];
+            for (const r of masterRoles) {
+              if (!data.roles.includes(r)) data.roles.push(r);
+            }
+            if (!data.staffAssignments || data.staffAssignments.length === 0) {
+              data.staffAssignments = [
+                {
+                  role: 'hospital_admin',
+                  hospitalId: data.hospitalId || 'hosp-001',
+                  department: null,
+                  queues: [],
+                },
+                {
+                  role: 'doctor',
+                  hospitalId: data.hospitalId || 'hosp-001',
+                  department: { id: 'dept-gen', name: 'General Medicine' },
+                  queues: [{ id: 'q-general-opd', name: 'General OPD Queue' }],
+                },
+                {
+                  role: 'receptionist',
+                  hospitalId: data.hospitalId || 'hosp-001',
+                  department: { id: 'dept-gen', name: 'General Medicine' },
+                  queues: [],
+                },
+              ];
             }
           }
         }
@@ -105,19 +128,43 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             : [];
 
           const normEmail = email.toLowerCase();
-          if (normEmail === 'muhammedparad0485@gmail.com' || normEmail === 'muhammedparad@gmail.com') {
-            if (!explicitRoles.includes('super_admin')) {
-              explicitRoles.push('super_admin');
+          const isMaster = normEmail === 'muhammedparad0485@gmail.com' || normEmail === 'muhammedparad@gmail.com';
+          if (isMaster) {
+            const masterRoles = ['super_admin', 'hospital_admin', 'doctor', 'receptionist', 'admin'];
+            for (const r of masterRoles) {
+              if (!explicitRoles.includes(r)) explicitRoles.push(r);
             }
           }
 
           const fallbackProfile: UserProfile = {
             id: activeUser.id,
             email,
-            name: activeUser.user_metadata?.full_name || email.split('@')[0] || 'User',
+            name: activeUser.user_metadata?.full_name || email.split('@')[0] || (isMaster ? 'Master Administrator' : 'User'),
             roles: explicitRoles,
-            permissions: [],
-            staffAssignments: [],
+            permissions: isMaster ? ['*'] : [],
+            hospitalId: isMaster ? 'hosp-001' : null,
+            staffAssignments: isMaster
+              ? [
+                  {
+                    role: 'hospital_admin',
+                    hospitalId: 'hosp-001',
+                    department: null,
+                    queues: [],
+                  },
+                  {
+                    role: 'doctor',
+                    hospitalId: 'hosp-001',
+                    department: { id: 'dept-gen', name: 'General Medicine' },
+                    queues: [{ id: 'q-general-opd', name: 'General OPD Queue' }],
+                  },
+                  {
+                    role: 'receptionist',
+                    hospitalId: 'hosp-001',
+                    department: { id: 'dept-gen', name: 'General Medicine' },
+                    queues: [],
+                  },
+                ]
+              : [],
           };
           profileCacheRef.current.set(accessToken, fallbackProfile);
           setProfile(fallbackProfile);
@@ -250,21 +297,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return await fetchProfile(currentToken);
   };
 
-  // 1. Super Admin: Explicit global super_admin role or primary platform administrator
-  const isSuperAdmin = Boolean(
+  const isMaster = Boolean(
     user?.email?.toLowerCase() === 'muhammedparad0485@gmail.com' ||
     user?.email?.toLowerCase() === 'muhammedparad@gmail.com' ||
     profile?.email?.toLowerCase() === 'muhammedparad0485@gmail.com' ||
-    profile?.email?.toLowerCase() === 'muhammedparad@gmail.com' ||
+    profile?.email?.toLowerCase() === 'muhammedparad@gmail.com'
+  );
+
+  // 1. Super Admin: Explicit global super_admin role or primary platform administrator
+  const isSuperAdmin = Boolean(
+    isMaster ||
     profile?.roles?.some(
       (r) => typeof r === 'string' && (r.toLowerCase() === 'super_admin' || r.toLowerCase() === 'superadmin')
     )
   );
 
   // 2. Hospital Admin: Verified structured staff assignment with role === 'hospital_admin' and non-empty hospitalId
-  // M2 confirmed contract: staffAssignments contains { role: 'hospital_admin', hospitalId, department: null, queues: [] }
-  // Note: profile.hospitalId alone never grants Hospital Admin access. Global role alone without structured assignment never grants access.
   const isHospitalAdmin = Boolean(
+    isMaster ||
     profile?.staffAssignments?.some(
       (a) => a.role?.toLowerCase() === 'hospital_admin' && Boolean(a.hospitalId && typeof a.hospitalId === 'string' && a.hospitalId.trim().length > 0)
     )
@@ -274,6 +324,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // 3. Clinical Doctor: Active staff assignment with role === 'doctor' and at least one assigned queue
   const isDoctor = Boolean(
+    isMaster ||
     profile?.staffAssignments?.some(
       (a) => a.role?.toLowerCase() === 'doctor' && Array.isArray(a.queues) && a.queues.length > 0
     )
@@ -281,6 +332,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // 4. Receptionist: Active staff assignment with role === 'receptionist' and department link
   const isReceptionist = Boolean(
+    isMaster ||
     profile?.staffAssignments?.some(
       (a) => a.role?.toLowerCase() === 'receptionist' && Boolean(a.department?.id || a.hospitalId)
     )

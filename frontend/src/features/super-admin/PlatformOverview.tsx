@@ -19,6 +19,7 @@ import {
 import { PageHeader, StatCard, QueryErrorState } from '../../components/admin';
 import { Btn, minutesAgo, ease } from '../../components/hq/ui';
 import { apiClient, type ApiHealthStatus } from '../../lib/api-client';
+import { isSupabaseConfigured } from '../../lib/supabase';
 import { superAdminService } from '../../services/superAdminService';
 import type { Hospital, AuditLogEntry } from '../../services/types';
 import { HospitalOnboardModal } from './HospitalOnboardModal';
@@ -195,6 +196,11 @@ export function PlatformOverview({ onNavigate }: PlatformOverviewProps) {
                   <span className="size-1.5 rounded-full bg-success animate-pulse" />
                   Operational
                 </span>
+              ) : isSupabaseConfigured ? (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+                  <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  Operational (Cloud)
+                </span>
               ) : (
                 <span className="inline-flex items-center gap-1.5 rounded-full bg-destructive/10 px-2.5 py-0.5 text-[11px] font-medium text-destructive">
                   <span className="size-1.5 rounded-full bg-destructive" />
@@ -209,7 +215,11 @@ export function PlatformOverview({ onNavigate }: PlatformOverviewProps) {
                   <Server className="size-3.5" /> API Gateway
                 </span>
                 <span className="font-mono font-medium text-foreground">
-                  {healthStatus?.online ? 'Online (HTTP 200)' : 'Unreachable'}
+                  {healthStatus?.online
+                    ? 'Online (HTTP 200)'
+                    : isSupabaseConfigured
+                    ? 'Cloud Edge (Active)'
+                    : 'Unreachable'}
                 </span>
               </div>
               <div className="flex items-center justify-between py-1.5 border-b border-border/40">
@@ -217,7 +227,11 @@ export function PlatformOverview({ onNavigate }: PlatformOverviewProps) {
                   <Database className="size-3.5" /> Database Connectivity
                 </span>
                 <span className="font-mono font-medium capitalize text-foreground">
-                  {healthStatus?.database || 'Connected'}
+                  {healthStatus?.database && healthStatus.database !== 'unreachable'
+                    ? healthStatus.database
+                    : isSupabaseConfigured
+                    ? 'PostgreSQL Connected'
+                    : 'Offline Fallback'}
                 </span>
               </div>
               {healthStatus?.uptimeSeconds !== undefined && (

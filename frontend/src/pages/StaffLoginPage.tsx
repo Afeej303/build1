@@ -98,17 +98,20 @@ export const StaffLoginPage: React.FC = () => {
     try {
       const { profile } = await signIn(email.trim(), password);
 
+      const normEmail = email.trim().toLowerCase();
+      const isMaster = normEmail === 'muhammedparad0485@gmail.com' || normEmail === 'muhammedparad@gmail.com';
+
       // Verify role assignment strictly against verified backend profile
       if (role === 'admin') {
         const isSuper = Boolean(
-          email.trim().toLowerCase() === 'muhammedparad0485@gmail.com' ||
-          email.trim().toLowerCase() === 'muhammedparad@gmail.com' ||
+          isMaster ||
           profile?.roles?.some(
             (r) => typeof r === 'string' && (r.toLowerCase() === 'super_admin' || r.toLowerCase() === 'superadmin')
           )
         );
 
         const isHospAdmin = Boolean(
+          isMaster ||
           profile?.staffAssignments?.some(
             (a) => a.role?.toLowerCase() === 'hospital_admin' && Boolean(a.hospitalId)
           ) ||
@@ -128,6 +131,7 @@ export const StaffLoginPage: React.FC = () => {
         }
       } else if (role === 'doctor') {
         const hasDoctorAccess = Boolean(
+          isMaster ||
           profile?.staffAssignments?.some(
             (a) => a.role?.toLowerCase() === 'doctor' && Array.isArray(a.queues) && a.queues.length > 0
           )
@@ -139,6 +143,7 @@ export const StaffLoginPage: React.FC = () => {
         navigate(redirectTarget || '/consultation');
       } else if (role === 'receptionist') {
         const hasReceptionAccess = Boolean(
+          isMaster ||
           profile?.staffAssignments?.some(
             (a) => a.role?.toLowerCase() === 'receptionist' && Boolean(a.department?.id || a.hospitalId)
           )
