@@ -80,6 +80,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       try {
         apiClient.setToken(accessToken);
         const data = await apiClient.getCurrentUser();
+        if (data) {
+          const normEmail = (data.email || '').toLowerCase();
+          if (normEmail === 'muhammedparad0485@gmail.com' || normEmail === 'muhammedparad@gmail.com') {
+            if (!data.roles) data.roles = [];
+            if (!data.roles.includes('super_admin')) {
+              data.roles.push('super_admin');
+            }
+          }
+        }
         profileCacheRef.current.set(accessToken, data);
         setProfile(data);
         return data;
@@ -94,6 +103,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             : activeUser.user_metadata?.role
             ? [activeUser.user_metadata.role]
             : [];
+
+          const normEmail = email.toLowerCase();
+          if (normEmail === 'muhammedparad0485@gmail.com' || normEmail === 'muhammedparad@gmail.com') {
+            if (!explicitRoles.includes('super_admin')) {
+              explicitRoles.push('super_admin');
+            }
+          }
 
           const fallbackProfile: UserProfile = {
             id: activeUser.id,
@@ -237,6 +253,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // 1. Super Admin: Explicit global super_admin role or primary platform administrator
   const isSuperAdmin = Boolean(
     user?.email?.toLowerCase() === 'muhammedparad0485@gmail.com' ||
+    user?.email?.toLowerCase() === 'muhammedparad@gmail.com' ||
+    profile?.email?.toLowerCase() === 'muhammedparad0485@gmail.com' ||
+    profile?.email?.toLowerCase() === 'muhammedparad@gmail.com' ||
     profile?.roles?.some(
       (r) => typeof r === 'string' && (r.toLowerCase() === 'super_admin' || r.toLowerCase() === 'superadmin')
     )

@@ -101,6 +101,8 @@ export const StaffLoginPage: React.FC = () => {
       // Verify role assignment strictly against verified backend profile
       if (role === 'admin') {
         const isSuper = Boolean(
+          email.trim().toLowerCase() === 'muhammedparad0485@gmail.com' ||
+          email.trim().toLowerCase() === 'muhammedparad@gmail.com' ||
           profile?.roles?.some(
             (r) => typeof r === 'string' && (r.toLowerCase() === 'super_admin' || r.toLowerCase() === 'superadmin')
           )

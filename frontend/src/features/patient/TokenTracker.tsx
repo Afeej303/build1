@@ -323,6 +323,7 @@ function Dashboard() {
   const { user, profile, isDoctor, isReceptionist, isHospitalAdmin, isSuperAdmin, signOut } = useAuth();
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<Tab>('Live Queue Tracker');
+  const [showStaffSelfIntake, setShowStaffSelfIntake] = useState(false);
 
   // Query A: Patient Profiles linked to user
   const {
@@ -404,7 +405,7 @@ function Dashboard() {
   }
 
   // 3. BARRIER A: Staff account confirmed to have NO personal patient profile (after successful empty response)
-  if (isStaff && isConfirmedEmpty) {
+  if (isStaff && isConfirmedEmpty && !showStaffSelfIntake) {
     return (
       <Page className="max-w-2xl">
         <div className="surface p-6 sm:p-8 rounded-2xl border border-blue-500/30 bg-blue-500/[0.04] text-center shadow-lift">
@@ -413,15 +414,23 @@ function Dashboard() {
           </div>
           <h2 className="text-xl font-bold tracking-tight">Clinical Staff Account</h2>
           <p className="text-xs text-muted-foreground mt-2 max-w-md mx-auto leading-relaxed">
-            You are signed in with a staff account ({profile?.name || user?.email}). This account does not hold a personal patient profile.
+            You are signed in with a staff account ({profile?.name || user?.email}). This account does not hold a personal patient profile yet.
           </p>
           <p className="text-[11px] text-muted-foreground mt-1 max-w-md mx-auto">
-            To book appointments or track queue tokens for yourself, a verified patient record must be linked at hospital intake. Otherwise, please return to your operational workstation.
+            You can return to your operational workstation, or register a personal patient profile to book appointments and track live queue tokens.
           </p>
           <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowStaffSelfIntake(true)}
+              className="press w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-semibold hover:opacity-90 cursor-pointer"
+            >
+              <User size={13} />
+              <span>Register Patient Profile & Book</span>
+            </button>
             <Link
               to={isDoctor ? '/consultation' : isReceptionist ? '/intake' : isSuperAdmin ? '/admin' : '/hospital-admin'}
-              className="press w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-semibold hover:opacity-90"
+              className="press w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl border border-border bg-card hover:bg-muted text-xs font-medium text-foreground transition-colors"
             >
               <span>Go to Workstation</span>
               <ArrowRight size={13} />
@@ -447,6 +456,7 @@ function Dashboard() {
           user={user}
           hospital={hospital}
           onRegistered={() => {
+            setShowStaffSelfIntake(false);
             queryClient.invalidateQueries({ queryKey: ['myPatients'] });
           }}
           onSignOut={() => signOut()}
